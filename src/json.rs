@@ -1,9 +1,10 @@
 use crate::parse;
 
+use std::collections::HashMap;
 use std::fmt;
 
-pub struct Object(Vec<JSONField>);
-pub struct Array(Vec<JSONData>);
+pub struct Object(pub HashMap<String, JSONData>);
+pub struct Array(pub Vec<JSONData>);
 
 pub enum JSON {
     Object(Object),
@@ -17,11 +18,6 @@ pub enum JSONData {
     Text(String),
     Number(f64),
     Null,
-}
-
-pub struct JSONField {
-    identifier: String,
-    data: JSONData,
 }
 
 enum JSONError {
@@ -44,13 +40,7 @@ impl fmt::Display for JSONError {
 
 impl JSON {
     fn parse(text: &str) -> Result<JSON, JSONError> {
-        let mut parse_context = parse::ParseContext {
-            lineno: 0,
-            col: 0,
-            nom: Vec::new(),
-            text,
-        };
-
+        let mut parse_context = parse::ParseContext::new(text);
         // hehe
         Ok(JSON::Array(Array(vec![JSONData::Null])))
     }
