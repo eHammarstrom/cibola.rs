@@ -21,19 +21,17 @@ pub enum JSONData {
 }
 
 enum JSONError {
-    UnexpectedToken((u32, u32), char),
+    InvalidJSON(parse::ParseError, parse::ParseError),
 }
 
 impl fmt::Display for JSONError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use self::JSONError::*;
-
         match self {
-            UnexpectedToken((line, col), token) => write!(
-                f,
-                "Unexpected token '{}' at line {} col {}.",
-                token, col, line
-            ),
+            JSONError::InvalidJSON(obj, arr) => {
+                writeln!(f, "Invalid JSON format. Reason:")?;
+                writeln!(f, "object: {}", obj)?;
+                writeln!(f, "array: {}", arr)
+            }
         }
     }
 }
@@ -41,7 +39,14 @@ impl fmt::Display for JSONError {
 impl JSON {
     fn parse(text: &str) -> Result<JSON, JSONError> {
         let mut parse_context = parse::ParseContext::new(text);
-        // hehe
-        Ok(JSON::Array(Array(vec![JSONData::Null])))
+
+        let obj = parse_context.object();
+        let arr = parse_context.array();
+
+        match (obj, arr) {
+            (Ok(object), _) => Ok(JSON::Object(object)),
+            (_, Ok(array)) => Ok(JSON::Array(array)),
+            (Err(obj_err), Err(arr_err)) => Err(JSONError::InvalidJSON(obj_err, arr_err)),
+        }
     }
 }
