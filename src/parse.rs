@@ -2,7 +2,6 @@ use crate::json;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::iter;
 use std::str;
 
 pub struct ParseContext<'a> {
@@ -90,11 +89,11 @@ impl<'a> ParseContext<'a> {
             }
         };
 
-        let peek = self.iter.next().ok_or(ParseError::EOS)?;
+        let next = self.iter.next().ok_or(ParseError::EOS)?;
 
         self.peek_steps += 1;
 
-        Ok(peek)
+        Ok(next)
     }
 
     fn reverse(&mut self) {
@@ -104,29 +103,57 @@ impl<'a> ParseContext<'a> {
         self.peek_steps = 0;
     }
 
+    fn consume(&mut self) {
+        // point of no return
+        // we 'consume' the peeked chars
+        self.peek_steps = 0;
+    }
+
+    fn eat(&mut self, tok: char, skip_ws_nl: bool) -> self::Result<()> {
+        let next = self.walk(skip_ws_nl)?;
+        if next == tok {
+            Ok(())
+        } else {
+            self.fail("parse::eat")
+        }
+    }
+
+    fn eat_str(&mut self, match_str: &'static str) -> self::Result<String> {
+        let mut next = self.walk(false)?;
+        let mut accumulator = String::new();
+        for c in match_str.chars() {
+            if next != c {
+                return self.fail(match_str);
+            }
+
+            next = self.walk(false)?;
+        }
+
+        Ok(accumulator)
+    }
+
+    fn eat_until(&mut self, tok: char) -> self::Result<String> {
+        let mut next = self.walk(false)?;
+        let mut accumulator = String::new();
+        while next != tok {
+            accumulator.push(next);
+            next = self.walk(false)?;
+        }
+        Ok(accumulator)
+    }
+
     fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
-        // reverse the iterator, we failed the parse
-        self.reverse();
         Err(ParseError::unexpected_token(
             &self,
-            "failed to parse object",
+            reason,
         ))
     }
 
     pub fn object(&mut self) -> self::Result<json::Object> {
-        let peek = self.walk(true)?;
-
-        let fields = match peek {
-            '{' => self.fields(),
-            _ => self.fail("failed to parse Object: missing {"),
-        }?;
-
-        let peek = self.walk(true)?;
-
-        match peek {
-            '}' => Ok(json::Object(fields)),
-            _ => self.fail("failed to parse Object: missing }"),
-        }
+        self.eat('{', true)?;
+        let fields = self.fields()?;
+        self.eat('}', true)?;
+        Ok(json::Object(fields))
     }
 
     pub fn array(&mut self) -> self::Result<json::Array> {
@@ -138,17 +165,7 @@ impl<'a> ParseContext<'a> {
 
         while let Ok((id, value)) = self.field() {
             let _ = hashmap.insert(id, value);
-
-            // check if end of fields (object end })
-            let peek = self.walk(true)?;
-            if peek == '}' {
-                self.reverse();
-                break;
-            }
         }
-
-        // FIXME: check such that what follows is a valid token
-        // otherwise the object was malformed
 
         Ok(hashmap)
     }
@@ -157,12 +174,35 @@ impl<'a> ParseContext<'a> {
         // 1. parse identifier
         // 2. parse value
 
-        let id = self.identifier()?;
+        let id = self.string()?;
+        self.eat(':', true)?;
+        let val = self.value()?;
 
-        Ok(("".to_string(), json::JSONData::Null))
+        Ok(( id, val ))
     }
 
-    fn identifier(&mut self) -> Result<String> {
-        Ok("lol".to_string())
+    fn string(&mut self) -> Result<String> {
+        self.eat('"', true)?;
+        self.eat_until('"')
+    }
+
+    fn text(&mut self) -> Result<json::JSONData> {
+        let s = self.string()?;
+        Ok(json::JSONData::Text(s))
+    }
+
+    fn boolean(&mut self) -> Result<json::JSONData> {
+        if let Ok(_) = self.eat_str("true") {
+            Ok(json::JSONData::Bool(true))
+        } else if let Ok(_) = self.eat_str("false") {
+            Ok(json::JSONData::Bool(false))
+        } else {
+            self.fail("boolean")
+        }
+    }
+
+    fn value(&mut self) -> Result<json::JSONData> {
+        self.text()
+            .or(self.boolean())
     }
 }
