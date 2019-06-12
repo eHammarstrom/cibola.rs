@@ -3,14 +3,19 @@ use crate::parse;
 use std::collections::HashMap;
 use std::fmt;
 
+#[derive(Debug, PartialEq)]
 pub struct Object(pub HashMap<String, JSONData>);
+
+#[derive(Debug, PartialEq)]
 pub struct Array(pub Vec<JSONData>);
 
+#[derive(Debug, PartialEq)]
 pub enum JSON {
     Object(Object),
     Array(Array),
 }
 
+#[derive(Debug, PartialEq)]
 pub enum JSONData {
     Object(Object),
     Array(Array),
@@ -20,6 +25,7 @@ pub enum JSONData {
     Null,
 }
 
+#[derive(Debug)]
 enum JSONError {
     InvalidJSON(parse::ParseError, parse::ParseError),
 }
