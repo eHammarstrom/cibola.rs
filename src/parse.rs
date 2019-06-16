@@ -221,10 +221,6 @@ impl<'a> ParseContext<'a> {
         Ok(json::Object(fields))
     }
 
-    pub fn array(&mut self) -> self::Result<json::Array> {
-        Err(ParseError::EOS)
-    }
-
     fn fields(&mut self) -> self::Result<HashMap<String, json::JSONData>> {
         debug!("ParseContext::fields");
         let mut hashmap = HashMap::<String, json::JSONData>::new();
@@ -246,9 +242,33 @@ impl<'a> ParseContext<'a> {
         self.eat(':', true)?;
         let val = self.value()?;
         debug!("ParseContext::field> value = {:?}", val);
+        // commas may trail
         let _ = self.eat(',', true);
 
         Ok((id, val))
+    }
+
+    pub fn array(&mut self) -> self::Result<json::Array> {
+        debug!("ParseContext::array");
+
+        self.eat('[', true)?;
+        let values = self.values()?;
+        self.eat(']', true)?;
+
+        Ok(json::Array(values))
+    }
+
+    fn values(&mut self) -> self::Result<Vec<json::JSONData>> {
+        debug!("ParseContext::values");
+        let mut vals = Vec::<json::JSONData>::new();
+
+        while let Ok(v) = self.value() {
+            let _ = vals.push(v);
+            // commas may trail
+            let _ = self.eat(',', true);
+        }
+
+        Ok(vals)
     }
 
     fn string(&mut self) -> Result<String> {
@@ -315,6 +335,7 @@ impl<'a> ParseContext<'a> {
         self.text()
             .or_else(|_| self.boolean())
             .or_else(|_| self.number())
+            .or_else(|_| self.array().map(json::JSONData::Array))
             .or_else(|_| self.object().map(json::JSONData::Object))
     }
 }
@@ -390,8 +411,6 @@ mod tests {
 
     #[test]
     fn parse_number() {
-        let _ = env_logger::init();
-
         let mut obj = HashMap::<String, json::JSONData>::new();
         obj.insert("myBool".to_string(), json::JSONData::Bool(true));
         obj.insert(
@@ -423,5 +442,37 @@ mod tests {
         let res = ctx.object();
 
         assert_eq!(res.unwrap(), json::Object(obj));
+    }
+
+    #[test]
+    fn parse_array() {
+        let mut map = HashMap::<String, json::JSONData>::new();
+        map.insert("myBool".to_string(), json::JSONData::Bool(true));
+        map.insert(
+            "myString".to_string(),
+            json::JSONData::Text("SomeString".to_string()),
+        );
+
+        let obj = json::Object(map);
+
+        let arr = vec![
+            json::JSONData::Text("SomeString".to_string()),
+            json::JSONData::Object(obj),
+            json::JSONData::Number(33.14),
+        ];
+
+        let txt = r#"
+
+        ["SomeString",
+                { "myBool": true, "myString": "SomeString", },
+
+           33.14,]
+
+        "#;
+
+        let mut ctx = parse::ParseContext::new(txt);
+        let res = ctx.array();
+
+        assert_eq!(res.unwrap(), json::Array(arr));
     }
 }
