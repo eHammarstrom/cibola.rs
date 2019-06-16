@@ -162,7 +162,7 @@ impl<'a> ParseContext<'a> {
     }
 
     fn eat_one_of(&mut self, match_chars: &[char]) -> self::Result<char> {
-        let mut next = self.walk(true)?;
+        let next = self.walk(true)?;
 
         if match_chars.contains(&next) {
             self.head = None;

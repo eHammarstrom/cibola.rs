@@ -95,3 +95,6 @@ tags
 .history
 
 # End of https://www.gitignore.io/api/vim,rust,emacs,visualstudiocode
+
+# test folder with large files
+tests/

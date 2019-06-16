@@ -26,7 +26,7 @@ pub enum JSONData {
 }
 
 #[derive(Debug)]
-enum JSONError {
+pub enum JSONError {
     InvalidJSON(parse::ParseError, parse::ParseError),
 }
 
@@ -43,7 +43,7 @@ impl fmt::Display for JSONError {
 }
 
 impl JSON {
-    fn parse(text: &str) -> Result<JSON, JSONError> {
+    pub fn parse(text: &str) -> Result<JSON, JSONError> {
         let mut parse_context = parse::ParseContext::new(text);
 
         let obj = parse_context.object();
