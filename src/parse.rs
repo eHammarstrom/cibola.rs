@@ -156,6 +156,7 @@ impl<'a> ParseContext<'a> {
 
             Ok(())
         } else {
+            self.head = Some(next);
             self.fail(format!("parse::eat expected '{}' but got '{}'", tok, next))
         }
     }
@@ -300,12 +301,14 @@ impl<'a> ParseContext<'a> {
     }
 
     fn number(&mut self) -> Result<json::JSONData> {
-        let allowed_chars = ['.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        let allowed_chars = [
+            '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
+        ];
         let mut accumulator = String::new();
 
         let negate = self.eat('-', true).is_ok();
 
-        while let Ok(num) = self.eat_one_of(&allowed_chars) {
+        while let Ok(num) = self.eat_one_of(&allowed_chars[0..allowed_chars.len() - 2]) {
             debug!("ParseContext::num> got {}", num);
             accumulator.push(num);
 
@@ -318,6 +321,12 @@ impl<'a> ParseContext<'a> {
         while let Ok(num) = self.eat_one_of(&allowed_chars[1..]) {
             debug!("ParseContext::num> got {}", num);
             accumulator.push(num);
+
+            // make sure negation is only used after exponent
+            // then hand the negation over to `f64::from_str`
+            if ['e', 'E'].contains(&num) && self.eat('-', false).is_ok() {
+                accumulator.push('-');
+            }
         }
 
         debug!("ParseContext::num> building {}", accumulator);
@@ -339,6 +348,7 @@ impl<'a> ParseContext<'a> {
         self.text()
             .or_else(|_| self.boolean())
             .or_else(|_| self.number())
+            .or_else(|_| self.text())
             .or_else(|_| self.array().map(json::JSONData::Array))
             .or_else(|_| self.object().map(json::JSONData::Object))
     }
@@ -415,6 +425,31 @@ mod tests {
 
     #[test]
     fn parse_number() {
+        let _ = env_logger::init();
+
+        let n1 = "3.14";
+        let n2 = "-3.14";
+        let n3 = "23.2e-10";
+        let n4 = "23.2E10";
+
+        let mut c1 = parse::ParseContext::new(n1);
+        let mut c2 = parse::ParseContext::new(n2);
+        let mut c3 = parse::ParseContext::new(n3);
+        let mut c4 = parse::ParseContext::new(n4);
+
+        let r1 = c1.number();
+        let r2 = c2.number();
+        let r3 = c3.number();
+        let r4 = c4.number();
+
+        assert_eq!(json::JSONData::Number(3.14), r1.unwrap());
+        assert_eq!(json::JSONData::Number(-3.14), r2.unwrap());
+        assert_eq!(json::JSONData::Number(23.2e-10), r3.unwrap());
+        assert_eq!(json::JSONData::Number(23.2E10), r4.unwrap());
+    }
+
+    #[test]
+    fn parse_object() {
         let mut obj = HashMap::<String, json::JSONData>::new();
         obj.insert("myBool".to_string(), json::JSONData::Bool(true));
         obj.insert(
