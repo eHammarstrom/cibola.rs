@@ -303,6 +303,8 @@ impl<'a> ParseContext<'a> {
         let allowed_chars = ['.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
         let mut accumulator = String::new();
 
+        let negate = self.eat('-', true).is_ok();
+
         while let Ok(num) = self.eat_one_of(&allowed_chars) {
             debug!("ParseContext::num> got {}", num);
             accumulator.push(num);
@@ -320,7 +322,9 @@ impl<'a> ParseContext<'a> {
 
         debug!("ParseContext::num> building {}", accumulator);
 
-        let num = f64::from_str(&accumulator).map(json::JSONData::Number);
+        let num = f64::from_str(&accumulator)
+            .map(|num| if negate { -num } else { num })
+            .map(json::JSONData::Number);
 
         match num {
             Ok(float) => Ok(float),
@@ -421,6 +425,7 @@ mod tests {
         let mut nest = obj.clone();
 
         nest.insert("myNumber".to_string(), json::JSONData::Number(33.14));
+        nest.insert("myNumber2".to_string(), json::JSONData::Number(-33.14));
 
         obj.insert(
             "myObject".to_string(),
@@ -435,6 +440,7 @@ mod tests {
                 "myString": "SomeString",
                 "myBool": true,
                 "myNumber": 33.14,
+                "myNumber2": -33.14,
             },
         }
         "#;
