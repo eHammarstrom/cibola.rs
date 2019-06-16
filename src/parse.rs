@@ -176,19 +176,23 @@ impl<'a> ParseContext<'a> {
         }
     }
 
-    fn eat_str(&mut self, match_str: String) -> self::Result<String> {
+    fn eat_str(&mut self, mut match_str: String) -> self::Result<String> {
         let mut accumulator = String::new();
 
+        // allow prefix spaces in front of first char
+        let c = match_str.remove(0);
+        self.eat(c, true)?;
+        accumulator.push(c);
+
         for c in match_str.chars() {
-            if self.eat(c, false).is_ok() {
-                accumulator.push(c);
-            } else {
+            if self.eat(c, false).is_err() {
                 return self.fail(format!(
                     "parse::eat_str expected '{}' but got '{}'",
                     c,
                     self.head.unwrap(),
                 ));
             }
+            accumulator.push(c);
         }
 
         Ok(accumulator)
@@ -282,6 +286,12 @@ impl<'a> ParseContext<'a> {
         Ok(s)
     }
 
+    fn null(&mut self) -> Result<json::JSONData> {
+        debug!("ParseContext::null");
+        self.eat_str("null".to_string())?;
+        Ok(json::JSONData::Null)
+    }
+
     fn text(&mut self) -> Result<json::JSONData> {
         debug!("ParseContext::text");
         let s = self.string()?;
@@ -345,7 +355,8 @@ impl<'a> ParseContext<'a> {
     }
 
     fn value(&mut self) -> Result<json::JSONData> {
-        self.text()
+        self.null()
+            .or_else(|_| self.text())
             .or_else(|_| self.boolean())
             .or_else(|_| self.number())
             .or_else(|_| self.text())
@@ -460,6 +471,7 @@ mod tests {
         let mut nest = obj.clone();
 
         nest.insert("myNumber".to_string(), json::JSONData::Number(33.14));
+        nest.insert("myNull".to_string(), json::JSONData::Null);
         nest.insert("myNumber2".to_string(), json::JSONData::Number(-33.14));
 
         obj.insert(
@@ -475,6 +487,7 @@ mod tests {
                 "myString": "SomeString",
                 "myBool": true,
                 "myNumber": 33.14,
+                "myNull": null   ,
                 "myNumber2": -33.14,
             },
         }
