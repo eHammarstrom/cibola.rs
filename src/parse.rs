@@ -28,12 +28,18 @@ pub enum ParseError {
 
 impl ParseError {
     fn unexpected_token(ctx: &ParseContext, reason: &'static str) -> ParseError {
-        let ParseContext { line, col, .. } = ctx;
+        let ParseContext {
+            line,
+            col,
+            head,
+            // iter,
+            ..
+        } = ctx;
 
         ParseError::UnexpectedToken {
             line: *line,
             col: *col,
-            token: '\0',
+            token: head.unwrap_or(' '),
             reason,
         }
     }
@@ -58,11 +64,13 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn add_lines(&mut self, num: u32) {
         self.line += num;
         self.col = 0;
     }
 
+    #[inline]
     fn skip_char(&mut self, skip: char) -> (u32, bool) {
         let mut did_skip = false;
         let mut skips = 0;
@@ -86,6 +94,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn skip_whitespace(&mut self) -> bool {
         let (skips, skipped) = self.skip_char(' ');
 
@@ -94,6 +103,7 @@ impl<'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn skip_newline(&mut self) -> bool {
         let (skips, skipped) = self.skip_char('\n');
 
@@ -102,6 +112,7 @@ impl<'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn skip_tab(&mut self) -> bool {
         let (skips, skipped) = self.skip_char('\t');
 
@@ -110,6 +121,7 @@ impl<'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn walk(&mut self, skip_ws_nl: bool) -> self::Result<char> {
         if skip_ws_nl {
             // skip whitespace, newline, and tab while we can
@@ -130,6 +142,7 @@ impl<'a> ParseContext<'a> {
         Ok(next)
     }
 
+    #[inline]
     fn eat(&mut self, tok: char, skip_ws_nl: bool) -> self::Result<()> {
         let next = self.walk(skip_ws_nl)?;
 
@@ -149,6 +162,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn eat_one_of(&mut self, match_chars: &[char]) -> self::Result<char> {
         let next = self.walk(true)?;
 
@@ -161,6 +175,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn eat_str(&mut self, match_str: &'static str) -> self::Result<String> {
         let mut match_iter = match_str.chars();
 
@@ -178,6 +193,7 @@ impl<'a> ParseContext<'a> {
         Ok(match_str.to_string())
     }
 
+    #[inline]
     fn eat_until(&mut self, tok: char) -> self::Result<String> {
         let mut next = self.walk(false)?;
         let mut accumulator = String::new();
@@ -192,10 +208,12 @@ impl<'a> ParseContext<'a> {
         Ok(accumulator)
     }
 
+    #[inline]
     fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
         Err(ParseError::unexpected_token(&self, reason))
     }
 
+    #[inline]
     pub fn object(&mut self) -> self::Result<json::Object> {
         self.eat('{', true)?;
         let fields = self.fields()?;
@@ -203,6 +221,7 @@ impl<'a> ParseContext<'a> {
         Ok(json::Object(fields))
     }
 
+    #[inline]
     fn fields(&mut self) -> self::Result<HashMap<String, json::JSONData>> {
         let mut hashmap = HashMap::<String, json::JSONData>::new();
 
@@ -213,6 +232,7 @@ impl<'a> ParseContext<'a> {
         Ok(hashmap)
     }
 
+    #[inline]
     fn field(&mut self) -> Result<(String, json::JSONData)> {
         // 1. parse identifier
         // 2. parse value
@@ -226,6 +246,7 @@ impl<'a> ParseContext<'a> {
         Ok((id, val))
     }
 
+    #[inline]
     pub fn array(&mut self) -> self::Result<json::Array> {
         self.eat('[', true)?;
         let values = self.values()?;
@@ -234,6 +255,7 @@ impl<'a> ParseContext<'a> {
         Ok(json::Array(values))
     }
 
+    #[inline]
     fn values(&mut self) -> self::Result<Vec<json::JSONData>> {
         let mut vals = Vec::<json::JSONData>::new();
 
@@ -246,6 +268,7 @@ impl<'a> ParseContext<'a> {
         Ok(vals)
     }
 
+    #[inline]
     fn string(&mut self) -> Result<String> {
         self.eat('"', true)?;
         let s = self.eat_until('"')?;
@@ -253,16 +276,19 @@ impl<'a> ParseContext<'a> {
         Ok(s)
     }
 
+    #[inline]
     fn null(&mut self) -> Result<json::JSONData> {
         self.eat_str("null")?;
         Ok(json::JSONData::Null)
     }
 
+    #[inline]
     fn text(&mut self) -> Result<json::JSONData> {
         let s = self.string()?;
         Ok(json::JSONData::Text(s))
     }
 
+    #[inline]
     fn boolean(&mut self) -> Result<json::JSONData> {
         if let Ok(_) = self.eat_str("true") {
             Ok(json::JSONData::Bool(true))
@@ -273,6 +299,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn number(&mut self) -> Result<json::JSONData> {
         let allowed_chars = [
             '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
@@ -310,6 +337,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn value(&mut self) -> Result<json::JSONData> {
         self.null()
             .or_else(|_| self.text())
