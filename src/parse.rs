@@ -23,12 +23,12 @@ pub enum ParseError {
         line: u32,
         col: u32,
         token: char,
-        reason: String,
+        reason: &'static str,
     },
 }
 
 impl ParseError {
-    fn unexpected_token(ctx: &ParseContext, reason: String) -> ParseError {
+    fn unexpected_token(ctx: &ParseContext, reason: &'static str) -> ParseError {
         let ParseContext { line, col, .. } = ctx;
 
         ParseError::UnexpectedToken {
@@ -157,7 +157,7 @@ impl<'a> ParseContext<'a> {
             Ok(())
         } else {
             self.head = Some(next);
-            self.fail(format!("parse::eat expected '{}' but got '{}'", tok, next))
+            self.fail("parse::eat")
         }
     }
 
@@ -169,10 +169,7 @@ impl<'a> ParseContext<'a> {
             Ok(next)
         } else {
             self.head = Some(next);
-            self.fail(format!(
-                "ParseContext::eat_one_of> expected one of {:?} but got {}",
-                match_chars, next,
-            ))
+            self.fail("parse::eat_one_of")
         }
     }
 
@@ -186,11 +183,7 @@ impl<'a> ParseContext<'a> {
 
         for c in match_str.chars() {
             if self.eat(c, false).is_err() {
-                return self.fail(format!(
-                    "parse::eat_str expected '{}' but got '{}'",
-                    c,
-                    self.head.unwrap(),
-                ));
+                return self.fail("parse::eat_str");
             }
             accumulator.push(c);
         }
@@ -214,7 +207,7 @@ impl<'a> ParseContext<'a> {
         Ok(accumulator)
     }
 
-    fn fail<T>(&mut self, reason: String) -> self::Result<T> {
+    fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
         Err(ParseError::unexpected_token(&self, reason))
     }
 
@@ -306,7 +299,7 @@ impl<'a> ParseContext<'a> {
         } else if let Ok(_) = self.eat_str("false".to_string()) {
             Ok(json::JSONData::Bool(false))
         } else {
-            self.fail("boolean".to_string())
+            self.fail("parse::boolean")
         }
     }
 
@@ -347,10 +340,7 @@ impl<'a> ParseContext<'a> {
 
         match num {
             Ok(float) => Ok(float),
-            Err(e) => self.fail(format!(
-                "ParseContext::number> parse failed with: {}",
-                e.to_string()
-            )),
+            _ => self.fail("parse::number"),
         }
     }
 
