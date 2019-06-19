@@ -325,7 +325,6 @@ impl<'a> ParseContext<'a> {
 mod tests {
     use crate::json;
     use crate::parse;
-    use env_logger;
     use std::collections::HashMap;
 
     #[test]
@@ -392,8 +391,6 @@ mod tests {
 
     #[test]
     fn parse_number() {
-        let _ = env_logger::init();
-
         let n1 = "3.14";
         let n2 = "-3.14";
         let n3 = "23.2e-10";
