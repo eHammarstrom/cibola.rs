@@ -1,6 +1,5 @@
 use crate::json;
 
-use log::debug;
 use std::collections::HashMap;
 use std::f64;
 use std::fmt;
@@ -75,10 +74,6 @@ impl<'a> ParseContext<'a> {
                 None => return (0, false),
                 Some(peek) => {
                     if peek != skip {
-                        if did_skip {
-                            debug!("ParseContext::skip_char> '{}'", skip);
-                        }
-
                         self.head = Some(peek);
                         return (skips, did_skip);
                     }
@@ -138,14 +133,7 @@ impl<'a> ParseContext<'a> {
     fn eat(&mut self, tok: char, skip_ws_nl: bool) -> self::Result<()> {
         let next = self.walk(skip_ws_nl)?;
 
-        debug!("ParseContext::eat> eat if {} == {}", tok, next);
-
         if next == tok {
-            debug!(
-                "ParseContext::eat> clear head, was {}",
-                self.head.unwrap_or('\0')
-            );
-
             self.head = None;
 
             if next == '\n' {
@@ -173,31 +161,28 @@ impl<'a> ParseContext<'a> {
         }
     }
 
-    fn eat_str(&mut self, mut match_str: String) -> self::Result<String> {
-        let mut accumulator = String::new();
+    fn eat_str(&mut self, match_str: &'static str) -> self::Result<String> {
+        let mut match_iter = match_str.chars();
 
         // allow prefix spaces in front of first char
-        let c = match_str.remove(0);
+        let c = match_iter.next().unwrap();
         self.eat(c, true)?;
-        accumulator.push(c);
 
-        for c in match_str.chars() {
+        for c in match_iter {
             if self.eat(c, false).is_err() {
                 return self.fail("parse::eat_str");
             }
-            accumulator.push(c);
         }
 
-        Ok(accumulator)
+        // only create String if successful parse
+        Ok(match_str.to_string())
     }
 
     fn eat_until(&mut self, tok: char) -> self::Result<String> {
-        debug!("ParseContext::eat_until> {}", tok);
         let mut next = self.walk(false)?;
         let mut accumulator = String::new();
 
         while next != tok {
-            debug!("ParseContext::eat_until> nom {} != {}", next, tok);
             accumulator.push(next);
             next = self.walk(false)?;
         }
@@ -212,7 +197,6 @@ impl<'a> ParseContext<'a> {
     }
 
     pub fn object(&mut self) -> self::Result<json::Object> {
-        debug!("ParseContext::object");
         self.eat('{', true)?;
         let fields = self.fields()?;
         self.eat('}', true)?;
@@ -220,7 +204,6 @@ impl<'a> ParseContext<'a> {
     }
 
     fn fields(&mut self) -> self::Result<HashMap<String, json::JSONData>> {
-        debug!("ParseContext::fields");
         let mut hashmap = HashMap::<String, json::JSONData>::new();
 
         while let Ok((id, value)) = self.field() {
@@ -234,12 +217,9 @@ impl<'a> ParseContext<'a> {
         // 1. parse identifier
         // 2. parse value
 
-        debug!("ParseContext::field");
         let id = self.string()?;
-        debug!("ParseContext::field> id = {}", id);
         self.eat(':', true)?;
         let val = self.value()?;
-        debug!("ParseContext::field> value = {:?}", val);
         // commas may trail
         let _ = self.eat(',', true);
 
@@ -247,8 +227,6 @@ impl<'a> ParseContext<'a> {
     }
 
     pub fn array(&mut self) -> self::Result<json::Array> {
-        debug!("ParseContext::array");
-
         self.eat('[', true)?;
         let values = self.values()?;
         self.eat(']', true)?;
@@ -257,7 +235,6 @@ impl<'a> ParseContext<'a> {
     }
 
     fn values(&mut self) -> self::Result<Vec<json::JSONData>> {
-        debug!("ParseContext::values");
         let mut vals = Vec::<json::JSONData>::new();
 
         while let Ok(v) = self.value() {
@@ -270,33 +247,26 @@ impl<'a> ParseContext<'a> {
     }
 
     fn string(&mut self) -> Result<String> {
-        debug!("ParseContext::string");
         self.eat('"', true)?;
-        debug!("ParseContext::string> nom nom nom");
         let s = self.eat_until('"')?;
-        debug!("ParseContext::string> {}", s);
         self.eat('"', false)?;
         Ok(s)
     }
 
     fn null(&mut self) -> Result<json::JSONData> {
-        debug!("ParseContext::null");
-        self.eat_str("null".to_string())?;
+        self.eat_str("null")?;
         Ok(json::JSONData::Null)
     }
 
     fn text(&mut self) -> Result<json::JSONData> {
-        debug!("ParseContext::text");
         let s = self.string()?;
-        debug!("ParseContext::text> {}", s);
         Ok(json::JSONData::Text(s))
     }
 
     fn boolean(&mut self) -> Result<json::JSONData> {
-        debug!("ParseContext::boolean");
-        if let Ok(_) = self.eat_str("true".to_string()) {
+        if let Ok(_) = self.eat_str("true") {
             Ok(json::JSONData::Bool(true))
-        } else if let Ok(_) = self.eat_str("false".to_string()) {
+        } else if let Ok(_) = self.eat_str("false") {
             Ok(json::JSONData::Bool(false))
         } else {
             self.fail("parse::boolean")
@@ -312,7 +282,6 @@ impl<'a> ParseContext<'a> {
         let negate = self.eat('-', true).is_ok();
 
         while let Ok(num) = self.eat_one_of(&allowed_chars[0..allowed_chars.len() - 2]) {
-            debug!("ParseContext::num> got {}", num);
             accumulator.push(num);
 
             // break on separator to continue parsing nums only
@@ -322,7 +291,6 @@ impl<'a> ParseContext<'a> {
         }
 
         while let Ok(num) = self.eat_one_of(&allowed_chars[1..]) {
-            debug!("ParseContext::num> got {}", num);
             accumulator.push(num);
 
             // make sure negation is only used after exponent
@@ -331,8 +299,6 @@ impl<'a> ParseContext<'a> {
                 accumulator.push('-');
             }
         }
-
-        debug!("ParseContext::num> building {}", accumulator);
 
         let num = f64::from_str(&accumulator)
             .map(|num| if negate { -num } else { num })
