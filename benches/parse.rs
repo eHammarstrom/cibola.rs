@@ -11,24 +11,43 @@ use std::io::prelude::*;
 
 use cibola::json::JSON;
 
-fn parse_json(path: &'static str) {
+use json;
+
+fn file_to_str(path: &'static str) -> String {
     let mut f = File::open(path).unwrap();
 
     let mut txt = String::new();
 
     let _ = f.read_to_string(&mut txt).unwrap();
 
+    txt
+}
+
+fn parse_json(path: &'static str) {
+    let txt = file_to_str(path);
+
     if let Err(e) = JSON::parse(&txt) {
-        panic!("Simple failed with: {}", e);
+        panic!("Cibola failed with: {}", e);
+    }
+}
+
+fn json_reference_parser(path: &'static str) {
+    let txt = file_to_str(path);
+
+    if let Err(e) = json::parse(&txt) {
+        panic!("json-rust failed with: {}", e);
     }
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let b = Benchmark::new("canada", |b| {
+    let b = Benchmark::new("CIBOLA::canada", |b| {
         b.iter(|| parse_json(black_box("tests/canada.json")))
+    })
+    .with_function("json-rust::canada", |b| {
+        b.iter(|| json_reference_parser(black_box("tests/canada.json")))
     });
 
-    let b = b.throughput(Throughput::Bytes(2251051)).sample_size(50);
+    let b = b.throughput(Throughput::Bytes(2251051)).sample_size(20);
 
     c.bench("parsing", b);
 }
