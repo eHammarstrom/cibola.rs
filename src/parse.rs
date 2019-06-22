@@ -302,35 +302,23 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     fn number(&mut self) -> Result<json::JSONData<'b>> {
+        let ptr_start = self.current_byte_as_ptr();
+        let idx_start = self.index;
+
         let allowed_chars = [
-            '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
+            '-', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
         ];
-        let mut accumulator = String::new();
 
-        let negate = self.eat('-', true).is_ok();
+        // eat through valid bytes
+        while let Ok(_) = self.eat_one_of(&allowed_chars) {}
 
-        while let Ok(num) = self.eat_one_of(&allowed_chars[0..allowed_chars.len() - 2]) {
-            accumulator.push(num);
+        let idx_end = self.index;
 
-            // break on separator to continue parsing nums only
-            if num == '.' {
-                break;
-            }
-        }
+        let num = unsafe {
+            str::from_utf8_unchecked(slice::from_raw_parts(ptr_start, idx_end - idx_start))
+        };
 
-        while let Ok(num) = self.eat_one_of(&allowed_chars[1..]) {
-            accumulator.push(num);
-
-            // make sure negation is only used after exponent
-            // then hand the negation over to `f64::from_str`
-            if ['e', 'E'].contains(&num) && self.eat('-', false).is_ok() {
-                accumulator.push('-');
-            }
-        }
-
-        let num = f64::from_str(&accumulator)
-            .map(|num| if negate { -num } else { num })
-            .map(json::JSONData::Number);
+        let num = f64::from_str(&num).map(json::JSONData::Number);
 
         match num {
             Ok(float) => Ok(float),
@@ -340,7 +328,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     fn value(&mut self) -> Result<json::JSONData<'b>> {
         self.null()
-            .or_else(|_| self.text())
             .or_else(|_| self.boolean())
             .or_else(|_| self.number())
             .or_else(|_| self.text())
