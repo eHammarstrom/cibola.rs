@@ -30,12 +30,18 @@ pub enum ParseError {
 
 impl ParseError {
     fn unexpected_token(ctx: &ParseContext, reason: &'static str) -> ParseError {
-        let ParseContext { line, col, .. } = ctx;
+        let ParseContext {
+            line,
+            col,
+            head,
+            // iter,
+            ..
+        } = ctx;
 
         ParseError::UnexpectedToken {
             line: *line,
             col: *col,
-            token: '\0',
+            token: head.unwrap_or(' '),
             reason,
         }
     }
@@ -61,21 +67,25 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn current_byte_as_ptr(&self) -> *const u8 {
         let p: *const u8 = self.text.as_bytes().as_ptr();
 
         unsafe { p.offset(self.index as isize) }
     }
 
+    #[inline]
     fn current_char(&mut self) -> Option<char> {
         self.head.or_else(|| self.iter.next())
     }
 
+    #[inline]
     fn add_lines(&mut self, num: u32) {
         self.line += num;
         self.col = 0;
     }
 
+    #[inline]
     fn skip_char(&mut self, skip: char) -> (u32, bool) {
         let char_len = skip.len_utf8();
         let mut did_skip = false;
@@ -101,6 +111,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn skip_whitespace(&mut self) -> bool {
         let (skips, skipped) = self.skip_char(' ');
 
@@ -109,6 +120,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn skip_newline(&mut self) -> bool {
         let (skips, skipped) = self.skip_char('\n');
 
@@ -117,6 +129,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn skip_tab(&mut self) -> bool {
         let (skips, skipped) = self.skip_char('\t');
 
@@ -125,6 +138,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         skipped
     }
 
+    #[inline]
     fn walk(&mut self, skip_ws_nl: bool) -> self::Result<char> {
         if skip_ws_nl {
             // skip whitespace, newline, and tab while we can
@@ -145,6 +159,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(next)
     }
 
+    #[inline]
     fn ate(&mut self, c: char) {
         self.head = None;
         self.index += c.len_utf8();
@@ -156,6 +171,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn eat(&mut self, tok: char, skip_ws_nl: bool) -> self::Result<()> {
         let next = self.walk(skip_ws_nl)?;
 
@@ -169,6 +185,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn eat_one_of(&mut self, match_chars: &[char]) -> self::Result<char> {
         let next = self.walk(true)?;
 
@@ -181,6 +198,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn eat_str(&mut self, match_str: &'static str) -> self::Result<&str> {
         let mut match_iter = match_str.chars();
 
@@ -198,6 +216,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(match_str)
     }
 
+    #[inline]
     fn eat_until(&mut self, tok: char) -> self::Result<&'b str> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
@@ -219,10 +238,12 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
         Err(ParseError::unexpected_token(&self, reason))
     }
 
+    #[inline]
     pub fn object(&mut self) -> self::Result<json::Object<'b>> {
         self.eat('{', true)?;
         let fields = self.fields()?;
@@ -230,6 +251,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(json::Object(fields))
     }
 
+    #[inline]
     fn fields(&mut self) -> self::Result<HashMap<&'b str, json::JSONData<'b>>> {
         let mut hashmap = HashMap::<&str, json::JSONData<'b>>::new();
 
@@ -240,6 +262,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(hashmap)
     }
 
+    #[inline]
     fn field(&mut self) -> Result<(&'b str, json::JSONData<'b>)> {
         // 1. parse identifier
         // 2. parse value
@@ -253,6 +276,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok((id, val))
     }
 
+    #[inline]
     pub fn array(&mut self) -> self::Result<json::Array<'b>> {
         self.eat('[', true)?;
         let values = self.values()?;
@@ -261,6 +285,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(json::Array(values))
     }
 
+    #[inline]
     fn values(&mut self) -> self::Result<Vec<json::JSONData<'b>>> {
         let mut vals = Vec::<json::JSONData<'b>>::new();
 
@@ -273,6 +298,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(vals)
     }
 
+    #[inline]
     fn string(&mut self) -> Result<&'b str> {
         self.eat('"', true)?;
         let s = self.eat_until('"')?;
@@ -281,16 +307,19 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(s)
     }
 
+    #[inline]
     fn null(&mut self) -> Result<json::JSONData<'b>> {
         self.eat_str("null")?;
         Ok(json::JSONData::Null)
     }
 
+    #[inline]
     fn text(&mut self) -> Result<json::JSONData<'b>> {
         let s = self.string()?;
         Ok(json::JSONData::Text(s))
     }
 
+    #[inline]
     fn boolean(&mut self) -> Result<json::JSONData<'b>> {
         if let Ok(_) = self.eat_str("true") {
             Ok(json::JSONData::Bool(true))
@@ -301,6 +330,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn number(&mut self) -> Result<json::JSONData<'b>> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
@@ -326,6 +356,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline]
     fn value(&mut self) -> Result<json::JSONData<'b>> {
         self.null()
             .or_else(|_| self.boolean())
