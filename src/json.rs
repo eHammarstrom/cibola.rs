@@ -4,23 +4,23 @@ use std::collections::HashMap;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Object(pub HashMap<String, JSONData>);
+pub struct Object<'a>(pub HashMap<&'a str, JSONData<'a>>);
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Array(pub Vec<JSONData>);
+pub struct Array<'a>(pub Vec<JSONData<'a>>);
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum JSON {
-    Object(Object),
-    Array(Array),
+pub enum JSON<'a> {
+    Object(Object<'a>),
+    Array(Array<'a>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum JSONData {
-    Object(Object),
-    Array(Array),
+pub enum JSONData<'a> {
+    Object(Object<'a>),
+    Array(Array<'a>),
     Bool(bool),
-    Text(String),
+    Text(&'a str),
     Number(f64),
     Null,
 }
@@ -42,8 +42,8 @@ impl fmt::Display for JSONError {
     }
 }
 
-impl JSON {
-    pub fn parse(text: &str) -> Result<JSON, JSONError> {
+impl<'a, 'b: 'a> JSON<'a> {
+    pub fn parse(text: &'a str) -> Result<JSON<'b>, JSONError> {
         let mut parse_context = parse::ParseContext::new(text);
 
         let obj = parse_context.object();
