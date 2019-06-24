@@ -248,7 +248,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     fn eat_one_of(&mut self, match_chars: &[u8]) -> self::Result<u8> {
-        let next = self.walk(true)?;
+        let next = self.walk(false)?;
 
         if match_chars.contains(&next) {
             self.ate(next);
@@ -331,7 +331,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok((id, val))
     }
 
-    #[inline]
     pub fn array(&mut self) -> self::Result<json::Array<'b>> {
         self.eat(b'[', true)?;
         let values = self.values()?;
@@ -340,7 +339,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(json::Array(values))
     }
 
-    #[inline]
     fn values(&mut self) -> self::Result<Vec<json::JSONData<'b>>> {
         let mut vals = Vec::<json::JSONData<'b>>::new();
 
@@ -384,18 +382,18 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn number(&mut self) -> Result<json::JSONData<'b>> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
+
+        // eat through valid bytes, skip initial ws
         let mut next = self.walk(true)?;
 
         while match next {
-            '0'..='9' | '-' | '.' | 'e' | 'E' => {
+            b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => {
                 self.ate(next);
-                next = self.walk(false).unwrap_or('x');
+                next = self.walk(false).unwrap_or(b'\x00');
                 true
             }
             _ => false,
         } {}
-
-        self.head = Some(next);
 
         let idx_end = self.index;
 
@@ -414,18 +412,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     #[inline]
     fn value(&mut self) -> Result<json::JSONData<'b>> {
         let next = self.walk(true)?;
-
+        // lookahead
         match next {
-            '[' => self.array().map(json::JSONData::Array),
-            '{' => self.object().map(json::JSONData::Object),
-            '0'..='9' | '-' => self.number(),
-            't' | 'f' => self.boolean(),
-            'n' => self.null(),
-            '"' => self.text(),
-            _ => {
-                self.head = Some(next);
-                self.fail("parse::value lookahead failed")
-            }
+            b'[' => self.array().map(json::JSONData::Array),
+            b'{' => self.object().map(json::JSONData::Object),
+            b'0'...b'9' | b'-' => self.number(),
+            b't' | b'f' => self.boolean(),
+            b'n' => self.null(),
+            b'"' => self.text(),
+            _ => self.fail("parse::value lookahead failed"),
         }
     }
 }
