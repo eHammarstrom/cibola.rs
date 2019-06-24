@@ -335,12 +335,27 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
+        /*
         let allowed_chars = [
             '-', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E',
         ];
+        */
 
         // eat through valid bytes
-        while let Ok(_) = self.eat_one_of(&allowed_chars) {}
+        // while let Ok(_) = self.eat_one_of(&allowed_chars) {}
+
+        let mut next = self.walk(true)?;
+
+        while match next {
+            '0'..='9' | '-' | '.' | 'e' | 'E' => {
+                self.ate(next);
+                next = self.walk(false).unwrap_or('x');
+                true
+            }
+            _ => false,
+        } {}
+
+        self.head = Some(next);
 
         let idx_end = self.index;
 
@@ -358,12 +373,20 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     #[inline]
     fn value(&mut self) -> Result<json::JSONData<'b>> {
-        self.null()
-            .or_else(|_| self.boolean())
-            .or_else(|_| self.number())
-            .or_else(|_| self.text())
-            .or_else(|_| self.array().map(json::JSONData::Array))
-            .or_else(|_| self.object().map(json::JSONData::Object))
+        let next = self.walk(true)?;
+
+        match next {
+            '[' => self.array().map(json::JSONData::Array),
+            '{' => self.object().map(json::JSONData::Object),
+            '0'..='9' | '-' => self.number(),
+            't' | 'f' => self.boolean(),
+            'n' => self.null(),
+            '"' => self.text(),
+            _ => {
+                self.head = Some(next);
+                self.fail("parse::value lookahead failed")
+            }
+        }
     }
 }
 
