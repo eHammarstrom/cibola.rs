@@ -1,3 +1,5 @@
+commit: eb8c0c4
+
 parsing/json-rust::canada
                         time:   [10.250 ms 10.354 ms 10.456 ms]
                         thrpt:  [205.31 MiB/s 207.34 MiB/s 209.45 MiB/s]
