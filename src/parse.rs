@@ -42,7 +42,7 @@ pub struct ParseContext<'a> {
     line: u32,
     col: u32,
     bytes: &'a [u8],
-    ate: u8,
+    last_accept: u8,
     text: &'a str,
     index: usize, // index in source str `text`
 }
@@ -93,7 +93,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             line: 0,
             col: 0,
             bytes: text.as_bytes(),
-            ate: b'\x00',
+            last_accept: b'\x00',
             text,
             index: 0,
         }
@@ -106,94 +106,37 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Returns byte at index or EOF (as None)
-    fn current_byte(&self) -> Option<u8> {
+    fn current_byte(&self) -> Result<u8> {
         if self.index < self.bytes.len() {
-            Some(self.bytes[self.index])
+            Ok(self.bytes[self.index])
         } else {
-            None
+            Err(ParseError::EOS)
         }
     }
 
-    /// Increases line count by N, and resets column position
-    fn add_lines(&mut self, num: u32) {
-        self.line += num;
-        self.col = 0;
-    }
-
-    #[inline(always)]
-    fn peek(&self) -> Option<u8> {
+    fn peek(&self) -> Result<u8> {
         if self.index + 1 < self.bytes.len() {
-            Some(self.bytes[self.index + 1])
+            Ok(self.bytes[self.index + 1])
         } else {
-            None
+            Err(ParseError::EOS)
         }
     }
 
-    #[inline(always)]
-    fn accept(&mut self) {
-        self.index += 1;
-    }
-
-    /// Returns the number of skipped bytes, given the skip byte
-    fn skip_byte(&mut self, skip: u8) -> (u32, bool) {
-        let mut did_skip = false;
-        let mut skips = 0;
-
-        loop {
-            let current_byte = self.current_byte();
-
-            match current_byte {
-                None => return (0, false),
-                Some(byte) => {
-                    if byte != skip {
-                        return (skips, did_skip);
-                    } else {
-                        self.ate(byte);
-                        did_skip = true;
-                        skips += 1;
-                    }
-                }
+    fn skip_ctrl_bytes(&mut self) {
+        while let Ok(byte) = self.current_byte() {
+            match byte {
+                b'\n' | b'\r' | b'\t' | b' ' => self.accept(),
+                _ => break,
             }
         }
-    }
-
-    fn skip_whitespace(&mut self) -> bool {
-        let (skips, skipped) = self.skip_byte(b' ');
-
-        self.col += skips;
-
-        skipped
-    }
-
-    fn skip_newline(&mut self) -> bool {
-        let (skips, skipped) = self.skip_byte(b'\n');
-
-        self.add_lines(skips);
-
-        skipped
-    }
-
-    fn skip_tab(&mut self) -> bool {
-        let (skips, skipped) = self.skip_byte(b'\t');
-
-        self.col += skips;
-
-        skipped
     }
 
     fn walk(&mut self, allow_skip: bool) -> self::Result<u8> {
         if allow_skip {
-            // skip whitespace, newline, and tab while we can
-            loop {
-                let skipped = self.skip_whitespace() || self.skip_newline() || self.skip_tab();
+            self.skip_ctrl_bytes();
+        }
 
-                if !skipped {
-                    break;
-                }
-            }
-        };
-
-        let next = self.current_byte().ok_or(ParseError::EOS)?;
+        let next = self.current_byte()?;
 
         // because we have already skipped whitespace, newline, and tab
         // we may now coerce b'\' + b'\t' to b'\t'
@@ -204,8 +147,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         //
         let next = match (next, self.peek()) {
             // escape char and control character
-            (b'\\', Some(peek)) if !ALLOWED[peek as usize] => {
-                self.ate(next);
+            (b'\\', Ok(peek)) if !ALLOWED[peek as usize] => {
+                self.accept();
 
                 // TODO: add unicode parse
                 match peek {
@@ -223,23 +166,21 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(next)
     }
 
-    fn ate(&mut self, b: u8) {
-        self.accept();
+    fn accept(&mut self) {
+        self.index += 1;
+        self.last_accept = self.bytes[self.index - 1];
+    }
 
-        self.ate = b;
-
-        if b == b'\n' {
-            self.add_lines(1);
-        } else {
-            self.col += 1;
-        }
+    fn accept_n(&mut self, n: usize) {
+        self.index += n;
+        self.last_accept = self.bytes[self.index - 1];
     }
 
     fn eat(&mut self, token: u8, skip_ws_nl: bool) -> self::Result<()> {
         let next = self.walk(skip_ws_nl)?;
 
         if next == token {
-            self.ate(next);
+            self.accept();
 
             Ok(())
         } else {
@@ -247,47 +188,32 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    fn eat_one_of(&mut self, match_chars: &[u8]) -> self::Result<u8> {
-        let next = self.walk(false)?;
-
-        if match_chars.contains(&next) {
-            self.ate(next);
-            Ok(next)
-        } else {
-            self.fail("parse::eat_one_of")
-        }
-    }
-
     fn eat_str(&mut self, match_str: &'static str) -> self::Result<&str> {
         let match_bytes = match_str.as_bytes();
 
-        // allow prefix spaces in front of first char
-        let b = match_bytes[0];
-        self.eat(b, true)?;
+        // skip in front of first char
+        self.skip_ctrl_bytes();
 
-        for b in &match_bytes[1..] {
-            if self.eat(*b, false).is_err() {
-                return self.fail("parse::eat_str");
-            }
+        if match_bytes == &self.bytes[self.index..self.index + match_bytes.len()] {
+            self.accept_n(match_bytes.len());
+            Ok(match_str)
+        } else {
+            self.fail("parse::eat_str")
         }
-
-        // only create String if successful parse
-        Ok(match_str)
     }
 
     fn eat_until(&mut self, token: u8) -> self::Result<&'b str> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
+
         let mut next = self.walk(false)?;
 
         while next != token {
-            self.ate(next);
+            self.accept();
             next = self.walk(false)?;
         }
 
         let idx_end = self.index;
-        // do-while :(
-        // self.backtrack();
 
         unsafe {
             Ok(str::from_utf8_unchecked(slice::from_raw_parts(
@@ -380,7 +306,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     fn number(&mut self) -> Result<json::JSONData<'b>> {
-        let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
         // eat through valid bytes, skip initial ws
@@ -388,28 +313,20 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
         while match next {
             b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => {
-                self.ate(next);
+                self.accept();
                 next = self.walk(false).unwrap_or(b'\x00');
                 true
             }
             _ => false,
         } {}
 
-        let idx_end = self.index;
+        let num = unsafe { str::from_utf8_unchecked(&self.bytes[idx_start..self.index]) };
 
-        let num = unsafe {
-            str::from_utf8_unchecked(slice::from_raw_parts(ptr_start, idx_end - idx_start))
-        };
-
-        let num = f64::from_str(&num).map(json::JSONData::Number);
-
-        match num {
-            Ok(float) => Ok(float),
-            _ => self.fail("parse::number"),
-        }
+        f64::from_str(&num)
+            .map(json::JSONData::Number)
+            .or(self.fail("parse::number")) // should be folded
     }
 
-    #[inline]
     fn value(&mut self) -> Result<json::JSONData<'b>> {
         let next = self.walk(true)?;
         // lookahead
