@@ -1,0 +1,13 @@
+commit: 98e4efe
+
+parsing/json-rust::canada
+                        time:   [10.204 ms 10.234 ms 10.267 ms]
+                        thrpt:  [209.10 MiB/s 209.77 MiB/s 210.38 MiB/s]
+
+parsing/serde_json::canada
+                        time:   [14.469 ms 14.486 ms 14.502 ms]
+                        thrpt:  [148.04 MiB/s 148.19 MiB/s 148.37 MiB/s]
+
+parsing/CIBOLA::canada  time:   [43.270 ms 43.369 ms 43.454 ms]
+                        thrpt:  [49.403 MiB/s 49.500 MiB/s 49.613 MiB/s]
+

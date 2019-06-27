@@ -114,6 +114,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Returns next byte in the sequence
     fn peek(&self) -> Result<u8> {
         if self.index + 1 < self.bytes.len() {
             Ok(self.bytes[self.index + 1])
@@ -122,6 +123,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Skips '\n', '\r', '\t', ' '
     fn skip_ctrl_bytes(&mut self) {
         while let Ok(byte) = self.current_byte() {
             match byte {
@@ -131,6 +133,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Returns the current byte in the sequence, while
+    /// coercing several control bytes into a control byte
     fn walk(&mut self, allow_skip: bool) -> self::Result<u8> {
         if allow_skip {
             self.skip_ctrl_bytes();
@@ -176,6 +180,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         self.last_accept = self.bytes[self.index - 1];
     }
 
+    /// Consumes expected token
     fn eat(&mut self, token: u8, skip_ws_nl: bool) -> self::Result<()> {
         let next = self.walk(skip_ws_nl)?;
 
@@ -188,6 +193,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Consumes expected string
     fn eat_str(&mut self, match_str: &'static str) -> self::Result<&str> {
         let match_bytes = match_str.as_bytes();
 
@@ -202,6 +208,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Consumes all bytes up intil an expected end byte
     fn eat_until(&mut self, token: u8) -> self::Result<&'b str> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
@@ -223,10 +230,12 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline(always)]
     fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
         Err(ParseError::unexpected_token(&self, reason))
     }
 
+    /// Consumes an object
     pub fn object(&mut self) -> self::Result<json::Object<'b>> {
         self.eat(b'{', true)?;
         let fields = self.fields()?;
@@ -234,6 +243,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(json::Object(fields))
     }
 
+    /// Consumes object fields
     fn fields(&mut self) -> self::Result<HashMap<&'b str, json::JSONData<'b>>> {
         let mut hashmap = HashMap::<&str, json::JSONData<'b>>::new();
 
@@ -244,6 +254,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(hashmap)
     }
 
+    /// Consumes an identifier and a value
     fn field(&mut self) -> Result<(&'b str, json::JSONData<'b>)> {
         // 1. parse identifier
         // 2. parse value
@@ -257,6 +268,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok((id, val))
     }
 
+    /// Consumes an array
     pub fn array(&mut self) -> self::Result<json::Array<'b>> {
         self.eat(b'[', true)?;
         let values = self.values()?;
@@ -265,6 +277,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(json::Array(values))
     }
 
+    /// Consumes comma separated values
     fn values(&mut self) -> self::Result<Vec<json::JSONData<'b>>> {
         let mut vals = Vec::<json::JSONData<'b>>::new();
 
@@ -277,6 +290,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(vals)
     }
 
+    /// Consumes an enquoted string
     fn string(&mut self) -> Result<&'b str> {
         self.eat(b'"', true)?;
         let s = self.eat_until(b'"')?;
@@ -285,16 +299,19 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(s)
     }
 
+    /// Consumes a Null 'value'
     fn null(&mut self) -> Result<json::JSONData<'b>> {
         self.eat_str("null")?;
         Ok(json::JSONData::Null)
     }
 
+    /// Consumes a Text value
     fn text(&mut self) -> Result<json::JSONData<'b>> {
         let s = self.string()?;
         Ok(json::JSONData::Text(s))
     }
 
+    /// Consumes a Boolean value
     fn boolean(&mut self) -> Result<json::JSONData<'b>> {
         if let Ok(_) = self.eat_str("true") {
             Ok(json::JSONData::Bool(true))
@@ -305,6 +322,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    /// Consumes a f64 Number value
     fn number(&mut self) -> Result<json::JSONData<'b>> {
         let idx_start = self.index;
 
@@ -327,6 +345,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             .or(self.fail("parse::number")) // should be folded
     }
 
+    /// Consumes a valid value
     fn value(&mut self) -> Result<json::JSONData<'b>> {
         let next = self.walk(true)?;
         // lookahead
