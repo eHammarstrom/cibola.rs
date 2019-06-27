@@ -324,17 +324,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn number(&mut self) -> Result<json::JSONData<'b>> {
         let idx_start = self.index;
 
-        // eat through valid bytes, skip initial ws
-        let mut next = self.walk(true)?;
-
-        while match next {
-            b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => {
-                self.accept();
-                next = self.walk(false).unwrap_or(b'\x00');
-                true
-            }
+        // eat through valid bytes
+        while match self.walk(false).unwrap_or(b'\0') {
+            b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => true,
             _ => false,
-        } {}
+        } {
+            self.accept();
+        }
 
         let num = unsafe { str::from_utf8_unchecked(&self.bytes[idx_start..self.index]) };
 
