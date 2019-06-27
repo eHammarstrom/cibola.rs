@@ -101,7 +101,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Returns pointer to current byte index
     fn current_byte_as_ptr(&self) -> *const u8 {
-        let p: *const u8 = self.bytes.as_ptr();
+        let p = self.bytes.as_ptr();
         unsafe { p.offset(self.index as isize) }
     }
 
@@ -131,43 +131,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    /// Returns the current byte in the sequence, while
-    /// coercing several control bytes into a control byte
-    fn walk(&mut self, allow_skip: bool) -> self::Result<u8> {
-        if allow_skip {
-            self.skip_ctrl_bytes();
-        }
-
-        let next = self.current_byte()?;
-
-        // because we have already skipped whitespace, newline, and tab
-        // we may now coerce b'\' + b'\t' to b'\t'
-        //
-        // escape = '"' '\' '/' 'b' 'f' 'n' 'r' 't' ('u' hex hex hex hex)
-        //
-        // and we know that !ALLOWED[byte] = escape
-        //
-        let next = match (next, self.peek()) {
-            // escape char and control character
-            (b'\\', Ok(peek)) if !ALLOWED[peek as usize] => {
-                self.accept();
-
-                // TODO: add unicode parse
-                match peek {
-                    b'r' => b'\r',
-                    b'n' => b'\n',
-                    b't' => b'\t',
-                    // f b " \ / u
-                    _ => peek,
-                }
-            }
-            // no peek or escape
-            _ => next,
-        };
-
-        Ok(next)
-    }
-
     fn accept(&mut self) {
         self.index += 1;
         self.last_accept = self.bytes[self.index - 1];
@@ -179,8 +142,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes expected token
-    fn eat(&mut self, token: u8, skip_ws_nl: bool) -> self::Result<()> {
-        let next = self.walk(skip_ws_nl)?;
+    fn eat(&mut self, token: u8) -> self::Result<()> {
+        let next = self.current_byte()?;
 
         if next == token {
             self.accept();
@@ -195,9 +158,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn eat_str(&mut self, match_str: &'static str) -> self::Result<&str> {
         let match_bytes = match_str.as_bytes();
 
-        // skip in front of first char
-        self.skip_ctrl_bytes();
-
         if match_bytes == &self.bytes[self.index..self.index + match_bytes.len()] {
             self.accept_n(match_bytes.len());
             Ok(match_str)
@@ -211,11 +171,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
-        let mut next = self.walk(false)?;
-
-        while next != token {
+        while self.current_byte()? != token {
             self.accept();
-            next = self.walk(false)?;
         }
 
         let idx_end = self.index;
@@ -228,16 +185,19 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    #[inline(always)]
     fn fail<T>(&mut self, reason: &'static str) -> self::Result<T> {
         Err(ParseError::unexpected_token(&self, reason))
     }
 
     /// Consumes an object
     pub fn object(&mut self) -> self::Result<json::Object<'b>> {
-        self.eat(b'{', true)?;
+        self.skip_ctrl_bytes();
+        self.eat(b'{')?;
+
         let fields = self.fields()?;
-        self.eat(b'}', true)?;
+
+        self.skip_ctrl_bytes();
+        self.eat(b'}')?;
         Ok(json::Object(fields))
     }
 
@@ -257,20 +217,30 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         // 1. parse identifier
         // 2. parse value
 
+        self.skip_ctrl_bytes();
         let id = self.string()?;
-        self.eat(b':', true)?;
+
+        self.skip_ctrl_bytes();
+        self.eat(b':')?;
+
         let val = self.value()?;
+
         // commas may trail
-        let _ = self.eat(b',', true);
+        self.skip_ctrl_bytes();
+        let _ = self.eat(b',');
 
         Ok((id, val))
     }
 
     /// Consumes an array
     pub fn array(&mut self) -> self::Result<json::Array<'b>> {
-        self.eat(b'[', true)?;
+        self.skip_ctrl_bytes();
+        self.eat(b'[')?;
+
         let values = self.values()?;
-        self.eat(b']', true)?;
+
+        self.skip_ctrl_bytes();
+        self.eat(b']')?;
 
         Ok(json::Array(values))
     }
@@ -282,7 +252,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         while let Ok(v) = self.value() {
             let _ = vals.push(v);
             // commas may trail
-            let _ = self.eat(b',', true);
+            self.skip_ctrl_bytes();
+            let _ = self.eat(b',');
         }
 
         Ok(vals)
@@ -290,9 +261,9 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Consumes an enquoted string
     fn string(&mut self) -> Result<&'b str> {
-        self.eat(b'"', true)?;
+        self.eat(b'"')?;
         let s = self.eat_until(b'"')?;
-        self.eat(b'"', false)?;
+        self.eat(b'"')?;
 
         Ok(s)
     }
@@ -325,7 +296,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let idx_start = self.index;
 
         // eat through valid bytes
-        while match self.walk(false).unwrap_or(b'\0') {
+        while match self.current_byte().unwrap_or(b'\0') {
             b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => true,
             _ => false,
         } {
@@ -341,7 +312,10 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Consumes a valid value
     fn value(&mut self) -> Result<json::JSONData<'b>> {
-        let next = self.walk(true)?;
+        self.skip_ctrl_bytes();
+
+        let next = self.current_byte()?;
+
         // lookahead
         match next {
             b'[' => self.array().map(json::JSONData::Array),
@@ -494,5 +468,16 @@ mod tests {
         let res = ctx.array();
 
         assert_eq!(res.unwrap(), json::Array(arr));
+    }
+
+    #[test]
+    fn parse_text_escaped() {
+        let t1 = r#""An\nEscaped\tString""#;
+
+        let mut c1 = parse::ParseContext::new(t1);
+
+        let r1 = c1.text();
+
+        assert_eq!(json::JSONData::Text("An\nEscaped\tString"), r1.unwrap());
     }
 }
