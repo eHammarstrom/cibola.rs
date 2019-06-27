@@ -71,7 +71,7 @@ impl ParseError {
         ParseError::UnexpectedToken {
             line: *line,
             col: *col,
-            token: bytes[*index] as char,
+            token: ctx.current_byte().unwrap_or(b'\0') as char,
             reason,
         }
     }
@@ -105,21 +105,19 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         unsafe { p.offset(self.index as isize) }
     }
 
-    /// Returns byte at index or EOF (as None)
+    /// Returns byte at index or EOS
     fn current_byte(&self) -> Result<u8> {
-        if self.index < self.bytes.len() {
-            Ok(self.bytes[self.index])
-        } else {
-            Err(ParseError::EOS)
+        match self.bytes.get(self.index) {
+            Some(byte) => Ok(*byte),
+            _ => Err(ParseError::EOS),
         }
     }
 
-    /// Returns next byte in the sequence
+    /// Returns next byte in the sequence or EOS
     fn peek(&self) -> Result<u8> {
-        if self.index + 1 < self.bytes.len() {
-            Ok(self.bytes[self.index + 1])
-        } else {
-            Err(ParseError::EOS)
+        match self.bytes.get(self.index + 1) {
+            Some(byte) => Ok(*byte),
+            _ => Err(ParseError::EOS),
         }
     }
 

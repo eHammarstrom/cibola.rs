@@ -53,14 +53,14 @@ fn serde_json_reference_parser(path: &'static str) {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let b = Benchmark::new("json-rust::canada", |b| {
-        b.iter(|| json_rust_reference_parser(black_box("tests/canada.json")))
+    let b = Benchmark::new("CIBOLA::canada", |b| {
+        b.iter(|| parse_json(black_box("tests/canada.json")))
     })
     .with_function("serde_json::canada", |b| {
         b.iter(|| serde_json_reference_parser(black_box("tests/canada.json")))
     })
-    .with_function("CIBOLA::canada", |b| {
-        b.iter(|| parse_json(black_box("tests/canada.json")))
+    .with_function("json-rust::canada", |b| {
+        b.iter(|| json_rust_reference_parser(black_box("tests/canada.json")))
     });
 
     let b = b.throughput(Throughput::Bytes(2251051)).sample_size(20);
