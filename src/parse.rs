@@ -117,17 +117,14 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    #[inline(always)]
     fn accept(&mut self) {
         self.index += 1;
     }
 
-    #[inline(always)]
     fn accept_n(&mut self, n: usize) {
         self.index += n;
     }
 
-    #[inline(always)]
     fn skip_comma(&mut self) {
         // apparently faster than pattern match on current_byte fn
         if self.index < self.bytes.len() {
