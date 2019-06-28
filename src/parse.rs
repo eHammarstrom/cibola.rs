@@ -75,9 +75,9 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     pub fn parse(&mut self) -> Result<JSONValue<'b>> {
         // valid json starts with object or array
         match self.value() {
-            o@Ok(JSONValue::Object(_)) => o,
-            a@Ok(JSONValue::Array(_)) => a,
-            _ => Err(Error::InvalidJSON)
+            o @ Ok(JSONValue::Object(_)) => o,
+            a @ Ok(JSONValue::Array(_)) => a,
+            _ => Err(Error::InvalidJSON),
         }
     }
 
@@ -95,7 +95,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     /// Returns pointer to current byte index
     fn current_byte_as_ptr(&self) -> *const u8 {
         let p = self.bytes.as_ptr();
-        unsafe { p.offset(self.index as isize) }
+        unsafe { p.add(self.index) }
     }
 
     /// Returns byte at index or EOS
@@ -127,10 +127,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     fn skip_comma(&mut self) {
         // apparently faster than pattern match on current_byte fn
-        if self.index < self.bytes.len() {
-            if self.bytes[self.index] == b',' {
-                self.accept();
-            }
+        if self.index < self.bytes.len() && self.bytes[self.index] == b',' {
+            self.accept();
         }
     }
 
@@ -269,7 +267,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         } else {
             loop {
                 let value = self.value()?;
-                let _ = vals.push(value);
+                vals.push(value);
 
                 // lookahead, check if end of object
                 self.skip_control_chars();
@@ -307,9 +305,9 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Consumes a Boolean value
     fn boolean(&mut self) -> Result<JSONValue<'b>> {
-        if let Ok(_) = self.eat_str("true") {
+        if self.eat_str("true").is_ok() {
             Ok(JSONValue::Bool(true))
-        } else if let Ok(_) = self.eat_str("false") {
+        } else if self.eat_str("false").is_ok() {
             Ok(JSONValue::Bool(false))
         } else {
             self.fail()
