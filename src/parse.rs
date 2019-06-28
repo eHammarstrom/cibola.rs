@@ -46,7 +46,7 @@ pub struct ParseContext<'a> {
 
 #[derive(Debug)]
 pub enum ParseError {
-    EOS,
+    EndOfStream,
     UnexpectedByte { token: char },
     IllegalByte,
     FailedMatch,
@@ -84,7 +84,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn current_byte(&self) -> Result<u8> {
         match self.bytes.get(self.index) {
             Some(byte) => Ok(*byte),
-            _ => Err(ParseError::EOS),
+            _ => Err(ParseError::EndOfStream),
         }
     }
 
