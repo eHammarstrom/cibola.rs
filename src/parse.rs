@@ -302,11 +302,11 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let idx_start = self.index;
 
         // eat through valid bytes
-        while match self.current_byte().unwrap_or(b'\0') {
-            b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => true,
-            _ => false,
-        } {
-            self.accept();
+        while let Ok(b) = self.current_byte() {
+            match b {
+                b'0'...b'9' | b'-' | b'.' | b'e' | b'E' => self.accept(),
+                _ => break,
+            }
         }
 
         // checked parse
