@@ -17,6 +17,7 @@ name = "parse"
 harness = false
 
 [dependencies]
+lexical-core = "^0.4"
 
 [profile.release]
 debug = true

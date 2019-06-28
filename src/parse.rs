@@ -7,6 +7,8 @@ use std::slice;
 use std::str;
 use std::str::FromStr;
 
+use lexical_core;
+
 //
 // Borrowed from: https://github.com/maciejhirsz/json-rust/blob/master/src/parser.rs#L158
 //
@@ -303,11 +305,14 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             self.accept();
         }
 
-        let num = unsafe { str::from_utf8_unchecked(&self.bytes[idx_start..self.index]) };
+        // checked parse
+        let res = lexical_core::try_atof64_slice(&self.bytes[idx_start..self.index]);
 
-        f64::from_str(&num)
-            .map(json::JSONData::Number)
-            .or(self.fail("parse::number")) // should be folded
+        if res.error.code == lexical_core::ErrorCode::Success {
+            Ok(json::JSONData::Number(res.value))
+        } else {
+            self.fail("parse::number")
+        }
     }
 
     /// Consumes a valid value
