@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process;
 
-use cibola::json::JSON;
+use cibola::json::JSONValue;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,7 +19,7 @@ fn main() {
 
     let _ = f.read_to_string(&mut txt).unwrap();
 
-    if let Err(e) = JSON::parse(&txt) {
+    if let Err(e) = JSONValue::parse(&txt) {
         println!("Simple failed with: {}", e);
     }
 }
