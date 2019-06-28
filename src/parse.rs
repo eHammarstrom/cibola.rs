@@ -45,23 +45,22 @@ pub struct ParseContext<'a> {
 }
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum Error {
     EndOfStream,
-    UnexpectedByte { token: char },
-    IllegalByte,
-    FailedMatch,
-    ExpectedBoolean,
-    ExpectedNumber,
-    ExpectedValue,
+    UnexpectedCharacter {
+        line: usize,
+        col: usize,
+        token: char,
+    }
 }
 
-impl fmt::Display for ParseError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "")
     }
 }
 
-type Result<T> = std::result::Result<T, ParseError>;
+type Result<T> = std::result::Result<T, Error>;
 
 impl<'a, 'b: 'a> ParseContext<'a> {
     pub fn new(text: &'b str) -> ParseContext {
@@ -74,6 +73,10 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    fn fail<T>(&self) -> Result<T> {
+        Err(Error::EndOfStream)
+    }
+
     /// Returns pointer to current byte index
     fn current_byte_as_ptr(&self) -> *const u8 {
         let p = self.bytes.as_ptr();
@@ -84,7 +87,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn current_byte(&self) -> Result<u8> {
         match self.bytes.get(self.index) {
             Some(byte) => Ok(*byte),
-            _ => Err(ParseError::EndOfStream),
+            _ => self.fail(),
         }
     }
 
@@ -117,7 +120,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
             Ok(())
         } else {
-            Err(ParseError::FailedMatch)
+            self.fail()
         }
     }
 
@@ -129,7 +132,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             self.accept_n(match_bytes.len());
             Ok(match_str)
         } else {
-            Err(ParseError::FailedMatch)
+            self.fail()
         }
     }
 
@@ -147,7 +150,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
             // illegal byte, fail
             if !ALLOWED[b as usize] {
-                return Err(ParseError::IllegalByte);
+                return self.fail();
             }
 
             self.accept();
@@ -261,7 +264,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         } else if let Ok(_) = self.eat_str("false") {
             Ok(JSONValue::Bool(false))
         } else {
-            Err(ParseError::ExpectedBoolean)
+            self.fail()
         }
     }
 
@@ -283,7 +286,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         if res.error.code == lexical_core::ErrorCode::Success {
             Ok(JSONValue::Number(res.value))
         } else {
-            Err(ParseError::ExpectedNumber)
+            self.fail()
         }
     }
 
@@ -301,7 +304,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             b't' | b'f' => self.boolean(),
             b'n' => self.null(),
             b'"' => self.text(),
-            _ => Err(ParseError::ExpectedValue),
+            _ => self.fail(),
         }
     }
 }
