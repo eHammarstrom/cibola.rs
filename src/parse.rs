@@ -82,6 +82,12 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     fn fail<T>(&self) -> Result<T> {
+        #[cfg(test)]
+        {
+            let s =  unsafe { str::from_utf8_unchecked(&self.bytes[0..self.index]) };
+            println!("{}", s);
+        }
+
         let mut line = 0;
         let mut col = 0;
 
@@ -170,9 +176,11 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             }
 
             // illegal byte, fail
+            /*
             if !ALLOWED[b as usize] {
                 return self.fail();
             }
+            */
 
             self.accept();
         }
@@ -359,6 +367,8 @@ mod tests {
     use crate::json::JSONValue;
     use crate::parse;
     use std::collections::HashMap;
+    use std::fs::File;
+    use std::io::Read;
 
     #[test]
     fn parse_text_and_boolean() {
@@ -502,5 +512,33 @@ mod tests {
         let r1 = c1.text();
 
         assert_eq!(JSONValue::Text("An\nEscaped\tString"), r1.unwrap());
+    }
+
+    fn file_to_str(path: &'static str) -> String {
+        let mut f = File::open(path).unwrap();
+
+        let mut txt = String::new();
+
+        let _ = f.read_to_string(&mut txt).unwrap();
+
+        txt
+    }
+
+    #[test]
+    fn canada_json() {
+        let txt = file_to_str("tests/canada.json");
+
+        if let Err(e) = JSONValue::parse(&txt) {
+            panic!("Cibola failed with: {}", e);
+        }
+    }
+
+    #[test]
+    fn citm_catalog_json() {
+        let txt = file_to_str("tests/citm_catalog.json");
+
+        if let Err(e) = JSONValue::parse(&txt) {
+            panic!("Cibola failed with: {}", e);
+        }
     }
 }
