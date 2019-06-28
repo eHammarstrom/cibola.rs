@@ -13,7 +13,6 @@ use cibola::json::JSON;
 
 use json;
 
-use serde::{Deserialize, Serialize};
 use serde_json;
 
 fn file_to_str(path: &'static str) -> String {

@@ -1,11 +1,9 @@
 use crate::json;
 
 use std::collections::HashMap;
-use std::f64;
 use std::fmt;
 use std::slice;
 use std::str;
-use std::str::FromStr;
 
 use lexical_core;
 
@@ -14,6 +12,7 @@ use lexical_core;
 //
 // Look up table that marks which characters are allowed in their raw
 // form in a string.
+/*
 const QU: bool = false; // double quote       0x22
 const BS: bool = false; // backslash          0x5C
 const CT: bool = false; // control character  0x00 ... 0x1F
@@ -38,41 +37,26 @@ static ALLOWED: [bool; 256] = [
     __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // E
     __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // F
 ];
+*/
 
 #[derive(Debug)]
 pub struct ParseContext<'a> {
-    line: u32,
-    col: u32,
     bytes: &'a [u8],
-    last_accept: u8,
     text: &'a str,
-    index: usize, // index in source str `text`
+    index: usize, // index in byte sequence _bytes_
 }
 
 #[derive(Debug)]
 pub enum ParseError {
     EOS,
-    UnexpectedToken {
-        line: u32,
-        col: u32,
-        token: char,
-        reason: &'static str,
-    },
+    UnexpectedToken { token: char, reason: &'static str },
 }
 
 impl ParseError {
     fn unexpected_token(ctx: &ParseContext, reason: &'static str) -> ParseError {
-        let ParseContext {
-            line,
-            col,
-            bytes,
-            index,
-            ..
-        } = ctx;
+        // TODO: Count line and column number of the current byte, where we failed
 
         ParseError::UnexpectedToken {
-            line: *line,
-            col: *col,
             token: ctx.current_byte().unwrap_or(b'\0') as char,
             reason,
         }
@@ -92,10 +76,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         #[cfg(test)]
         println!("---- TEXT START ----\n{}\n---- TEXT END ----", text);
         ParseContext {
-            line: 0,
-            col: 0,
             bytes: text.as_bytes(),
-            last_accept: b'\x00',
             text,
             index: 0,
         }
@@ -115,14 +96,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    /// Returns next byte in the sequence or EOS
-    fn peek(&self) -> Result<u8> {
-        match self.bytes.get(self.index + 1) {
-            Some(byte) => Ok(*byte),
-            _ => Err(ParseError::EOS),
-        }
-    }
-
     /// Skips '\n', '\r', '\t', ' '
     fn skip_ctrl_bytes(&mut self) {
         while let Ok(byte) = self.current_byte() {
@@ -133,14 +106,14 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    #[inline(always)]
     fn accept(&mut self) {
         self.index += 1;
-        self.last_accept = self.bytes[self.index - 1];
     }
 
+    #[inline(always)]
     fn accept_n(&mut self, n: usize) {
         self.index += n;
-        self.last_accept = self.bytes[self.index - 1];
     }
 
     /// Consumes expected token
