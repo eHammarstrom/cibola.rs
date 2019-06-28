@@ -12,7 +12,6 @@ use lexical_core;
 //
 // Look up table that marks which characters are allowed in their raw
 // form in a string.
-/*
 const QU: bool = false; // double quote       0x22
 const BS: bool = false; // backslash          0x5C
 const CT: bool = false; // control character  0x00 ... 0x1F
@@ -37,7 +36,6 @@ static ALLOWED: [bool; 256] = [
     __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // E
     __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // F
 ];
-*/
 
 #[derive(Debug)]
 pub struct ParseContext<'a> {
@@ -146,7 +144,18 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
-        while self.current_byte()? != token {
+        loop {
+            let b = self.current_byte()?;
+
+            if b == token {
+                break;
+            }
+
+            // illegal byte, fail
+            if !ALLOWED[b as usize] {
+                return self.fail("parse::eat_until illegal byte");
+            }
+
             self.accept();
         }
 
