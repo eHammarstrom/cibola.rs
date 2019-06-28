@@ -291,27 +291,10 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         Ok(s)
     }
 
-    /// Consumes a Null 'value'
-    fn null(&mut self) -> Result<JSONValue<'b>> {
-        self.eat_str("null")?;
-        Ok(JSONValue::Null)
-    }
-
     /// Consumes a Text value
     fn text(&mut self) -> Result<JSONValue<'b>> {
         let s = self.string()?;
         Ok(JSONValue::Text(s))
-    }
-
-    /// Consumes a Boolean value
-    fn boolean(&mut self) -> Result<JSONValue<'b>> {
-        if self.eat_str("true").is_ok() {
-            Ok(JSONValue::Bool(true))
-        } else if self.eat_str("false").is_ok() {
-            Ok(JSONValue::Bool(false))
-        } else {
-            self.fail()
-        }
     }
 
     /// Consumes a f64 Number value
@@ -344,12 +327,22 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
         // lookahead
         let res = match next {
+            b'0'...b'9' | b'-' => self.number(),
+            b't' => {
+                self.eat_str("true")?;
+                Ok(JSONValue::Bool(true))
+            },
+            b'f' => {
+                self.eat_str("false")?;
+                Ok(JSONValue::Bool(false))
+            },
+            b'n' => {
+                self.eat_str("null")?;
+                Ok(JSONValue::Null)
+            },
+            b'"' => self.text(),
             b'[' => self.array(),
             b'{' => self.object(),
-            b'0'...b'9' | b'-' => self.number(),
-            b't' | b'f' => self.boolean(),
-            b'n' => self.null(),
-            b'"' => self.text(),
             _ => self.fail(),
         };
 
