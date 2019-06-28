@@ -16,6 +16,6 @@ impl<'a, 'b: 'a> JSONValue<'a> {
     pub fn parse(text: &'a str) -> Result<JSONValue<'b>, parse::Error> {
         let mut parse_context = parse::ParseContext::new(text);
 
-        parse_context.value()
+        parse_context.parse()
     }
 }

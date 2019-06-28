@@ -51,7 +51,8 @@ pub enum Error {
         line: usize,
         col: usize,
         token: char,
-    }
+    },
+    InvalidJSON,
 }
 
 impl fmt::Display for Error {
@@ -64,8 +65,6 @@ type Result<T> = std::result::Result<T, Error>;
 
 impl<'a, 'b: 'a> ParseContext<'a> {
     pub fn new(text: &'b str) -> ParseContext {
-        #[cfg(test)]
-        println!("---- TEXT START ----\n{}\n---- TEXT END ----", text);
         ParseContext {
             bytes: text.as_bytes(),
             text,
@@ -73,8 +72,24 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
+    pub fn parse(&mut self) -> Result<JSONValue<'b>> {
+        // valid json starts with object or array
+        match self.value() {
+            o@Ok(JSONValue::Object(_)) => o,
+            a@Ok(JSONValue::Array(_)) => a,
+            _ => Err(Error::InvalidJSON)
+        }
+    }
+
     fn fail<T>(&self) -> Result<T> {
-        Err(Error::EndOfStream)
+        let mut line = 0;
+        let mut col = 0;
+
+        Err(Error::UnexpectedCharacter {
+            line,
+            col,
+            token: ' ',
+        })
     }
 
     /// Returns pointer to current byte index
@@ -85,14 +100,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Returns byte at index or EOS
     fn current_byte(&self) -> Result<u8> {
-        match self.bytes.get(self.index) {
-            Some(byte) => Ok(*byte),
-            _ => self.fail(),
+        if self.index < self.bytes.len() {
+            Ok(self.bytes[self.index])
+        } else {
+            Err(Error::EndOfStream)
         }
     }
 
     /// Skips '\n', '\r', '\t', ' '
-    fn skip_ctrl_bytes(&mut self) {
+    fn skip_control_chars(&mut self) {
         while let Ok(byte) = self.current_byte() {
             match byte {
                 b'\n' | b'\r' | b'\t' | b' ' => self.accept(),
@@ -111,8 +127,18 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         self.index += n;
     }
 
+    #[inline(always)]
+    fn skip_comma(&mut self) {
+        // apparently faster than pattern match on current_byte fn
+        if self.index < self.bytes.len() {
+            if self.bytes[self.index] == b',' {
+                self.accept();
+            }
+        }
+    }
+
     /// Consumes expected token
-    fn eat(&mut self, token: u8) -> self::Result<()> {
+    fn eat(&mut self, token: u8) -> Result<()> {
         let next = self.current_byte()?;
 
         if next == token {
@@ -125,7 +151,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes expected string
-    fn eat_str(&mut self, match_str: &'static str) -> self::Result<&str> {
+    fn eat_str(&mut self, match_str: &'static str) -> Result<&str> {
         let match_bytes = match_str.as_bytes();
 
         if match_bytes == &self.bytes[self.index..self.index + match_bytes.len()] {
@@ -137,7 +163,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes all bytes up intil an expected end byte
-    fn eat_until(&mut self, token: u8) -> self::Result<&'b str> {
+    fn eat_until(&mut self, token: u8) -> Result<&'b str> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
@@ -167,73 +193,98 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an object
-    fn object(&mut self) -> self::Result<JSONValue<'b>> {
-        self.skip_ctrl_bytes();
+    fn object(&mut self) -> Result<JSONValue<'b>> {
+        self.skip_control_chars();
         self.eat(b'{')?;
 
-        let fields = self.fields()?;
+        self.skip_control_chars();
+        let fields = self.object_fields()?;
 
-        self.skip_ctrl_bytes();
+        self.skip_control_chars();
         self.eat(b'}')?;
         Ok(JSONValue::Object(fields))
     }
 
     /// Consumes object fields
-    fn fields(&mut self) -> self::Result<HashMap<&'b str, JSONValue<'b>>> {
+    fn object_fields(&mut self) -> Result<HashMap<&'b str, JSONValue<'b>>> {
+        let b = self.current_byte()?;
         let mut hashmap = HashMap::<&str, JSONValue<'b>>::new();
 
-        while let Ok((id, value)) = self.field() {
-            let _ = hashmap.insert(id, value);
-        }
+        if b == b'}' {
+            // empty object
+            Ok(hashmap)
+        } else {
+            loop {
+                let (id, value) = self.object_field()?;
+                let _ = hashmap.insert(id, value);
 
-        Ok(hashmap)
+                // lookahead, check if end of object
+                self.skip_control_chars();
+                let b = self.current_byte()?;
+
+                if b == b'}' {
+                    break;
+                }
+            }
+
+            Ok(hashmap)
+        }
     }
 
     /// Consumes an identifier and a value
-    fn field(&mut self) -> Result<(&'b str, JSONValue<'b>)> {
+    fn object_field(&mut self) -> Result<(&'b str, JSONValue<'b>)> {
         // 1. parse identifier
         // 2. parse value
 
-        self.skip_ctrl_bytes();
+        self.skip_control_chars();
         let id = self.string()?;
 
-        self.skip_ctrl_bytes();
+        self.skip_control_chars();
         self.eat(b':')?;
 
         let val = self.value()?;
-
-        // commas may trail
-        self.skip_ctrl_bytes();
-        let _ = self.eat(b',');
 
         Ok((id, val))
     }
 
     /// Consumes an array
-    fn array(&mut self) -> self::Result<JSONValue<'b>> {
-        self.skip_ctrl_bytes();
+    fn array(&mut self) -> Result<JSONValue<'b>> {
+        self.skip_control_chars();
         self.eat(b'[')?;
 
-        let values = self.values()?;
+        self.skip_control_chars();
+        let values = self.array_values()?;
 
-        self.skip_ctrl_bytes();
+        self.skip_control_chars();
         self.eat(b']')?;
 
         Ok(JSONValue::Array(values))
     }
 
     /// Consumes comma separated values
-    fn values(&mut self) -> self::Result<Vec<JSONValue<'b>>> {
+    fn array_values(&mut self) -> Result<Vec<JSONValue<'b>>> {
+        let b = self.current_byte()?;
         let mut vals = Vec::<JSONValue<'b>>::new();
 
-        while let Ok(v) = self.value() {
-            let _ = vals.push(v);
-            // commas may trail
-            self.skip_ctrl_bytes();
-            let _ = self.eat(b',');
-        }
+        if b == b']' {
+            // empty array
+            Ok(vals)
+        } else {
+            loop {
+                let value = self.value()?;
+                let _ = vals.push(value);
 
-        Ok(vals)
+                // lookahead, check if end of object
+                self.skip_control_chars();
+                let b = self.current_byte()?;
+
+                if b == b']' {
+                    break;
+                }
+            }
+
+            Ok(vals)
+        }
     }
 
     /// Consumes an enquoted string
@@ -291,13 +342,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes a valid value
-    pub fn value(&mut self) -> Result<JSONValue<'b>> {
-        self.skip_ctrl_bytes();
+    fn value(&mut self) -> Result<JSONValue<'b>> {
+        self.skip_control_chars();
 
         let next = self.current_byte()?;
 
         // lookahead
-        match next {
+        let res = match next {
             b'[' => self.array(),
             b'{' => self.object(),
             b'0'...b'9' | b'-' => self.number(),
@@ -305,7 +356,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             b'n' => self.null(),
             b'"' => self.text(),
             _ => self.fail(),
-        }
+        };
+
+        // commas may trail
+        self.skip_control_chars();
+        self.skip_comma();
+
+        res
     }
 }
 
