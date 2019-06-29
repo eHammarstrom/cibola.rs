@@ -86,7 +86,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     fn fail<T>(&self) -> Result<T> {
         #[cfg(test)]
         {
-            let s =  unsafe { str::from_utf8_unchecked(&self.bytes[0..self.index]) };
+            let s = unsafe { str::from_utf8_unchecked(&self.bytes[0..self.index]) };
             println!("{}", s);
         }
 
@@ -134,8 +134,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     fn skip_comma(&mut self) {
-        // apparently faster than pattern match on current_byte fn
-        if self.index < self.bytes.len() && self.bytes[self.index] == b',' {
+        if let Ok(b',') = self.current_byte() {
             self.accept();
         }
     }
@@ -336,15 +335,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             b't' => {
                 self.eat_str("true")?;
                 Ok(JSONValue::Bool(true))
-            },
+            }
             b'f' => {
                 self.eat_str("false")?;
                 Ok(JSONValue::Bool(false))
-            },
+            }
             b'n' => {
                 self.eat_str("null")?;
                 Ok(JSONValue::Null)
-            },
+            }
             b'"' => self.text(),
             b'[' => self.array(),
             b'{' => self.object(),
