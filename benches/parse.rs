@@ -55,11 +55,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     let b = Benchmark::new("CIBOLA::canada", |b| {
         b.iter(|| parse_json(black_box("tests/canada.json")))
     })
-    /*
     .with_function("CIBOLA::citm_catalog", |b| {
         b.iter(|| parse_json(black_box("tests/citm_catalog.json")))
     })
-    */
     .with_function("serde_json::canada", |b| {
         b.iter(|| serde_json_reference_parser(black_box("tests/canada.json")))
     })
