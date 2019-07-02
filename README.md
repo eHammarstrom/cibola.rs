@@ -4,7 +4,7 @@ A json toy parser
 
 ### current speed, or a lack thereof
 
-#### tests/canada.json
+![benchmark-image](benches/current_bench.png)
 
 ```
 parsing/CIBOLA::canada  time:   [20.725 ms 20.924 ms 21.120 ms]
