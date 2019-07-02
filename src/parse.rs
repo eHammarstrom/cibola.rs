@@ -43,7 +43,10 @@ static ALLOWED: [bool; 256] = [
 pub struct ParseContext<'a> {
     bytes: &'a [u8],
     text: &'a str,
-    index: usize, // index in byte sequence _bytes_
+    // storage used for escaped strings and unicode parsing
+    buffers: Vec<Vec<u8>>,
+    // index in byte sequence _bytes_
+    index: usize,
 }
 
 #[derive(Debug)]
@@ -70,6 +73,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         ParseContext {
             bytes: text.as_bytes(),
             text,
+            buffers: Vec::new(),
             index: 0,
         }
     }
@@ -176,9 +180,20 @@ impl<'a, 'b: 'a> ParseContext<'a> {
                 break;
             }
 
-            // TODO: introduce buffering on escape byte
+            // hit escape char, start buffered parsing
+            if b == b'\\' {
+                // bring the initial parsed bytes into the buffer
+                let initial_str = unsafe {
+                    str::from_utf8_unchecked(slice::from_raw_parts(
+                        ptr_start,
+                        self.index - idx_start,
+                    ))
+                };
 
-            self.accept();
+                return self.eat_buffered_until(initial_str, token);
+            } else {
+                self.accept();
+            }
         }
 
         let idx_end = self.index;
@@ -189,6 +204,51 @@ impl<'a, 'b: 'a> ParseContext<'a> {
                 idx_end - idx_start,
             )))
         }
+    }
+
+    fn eat_buffered_until(&mut self, initial_str: &'b str, token: u8) -> Result<&'b str> {
+        let mut buffer = Vec::from(initial_str.as_bytes());
+
+        loop {
+            let b = self.current_byte()?;
+
+            if b == token {
+                break;
+            }
+
+            if b == b'\\' {
+                self.accept();
+                let following_b = self.current_byte()?;
+
+                // escape '"' '\' '/' 'b' 'f' 'n' 'r' 't'
+                // TODO: unicode: 'u' hex hex hex hex
+                match following_b {
+                    b'"' => buffer.push(b'\"'),
+                    b'\\' => buffer.push(b'\\'),
+                    b'/' => buffer.push(b'/'),
+                    b'b' => buffer.push(b'b'),
+                    b'f' => buffer.push(b'\r'),
+                    b'n' => buffer.push(b'\n'),
+                    b'r' => buffer.push(b'\r'),
+                    b't' => buffer.push(b'\t'),
+                    // unexpected byte following escape
+                    _ => return self.fail(),
+                }
+
+                self.accept();
+            } else {
+                buffer.push(b);
+                self.accept();
+            }
+        }
+
+        let buffered_str: &'b str = unsafe {
+            str::from_utf8_unchecked(slice::from_raw_parts(buffer.as_ptr(), buffer.len()))
+        };
+
+        self.buffers.push(buffer);
+
+        Ok(buffered_str)
     }
 
     /// Consumes an object
@@ -508,6 +568,28 @@ mod tests {
         let r1 = c1.text();
 
         assert_eq!(JSONValue::Text("An\nEscaped\tString"), r1.unwrap());
+    }
+
+    #[test]
+    fn parse_consecutive_escaped_strs() {
+        let text = r#"
+        {
+            "myFirs\tt": "Str\\ng",
+            "followed": true,
+            "by\\": "\tthe\\second",
+        }"#;
+
+        let mut ctx = parse::ParseContext::new(text);
+
+        let res = ctx.object();
+
+        let mut map = HashMap::new();
+
+        map.insert("myFirs\tt", JSONValue::Text("Str\\ng"));
+        map.insert("followed", JSONValue::Bool(true));
+        map.insert("by\\", JSONValue::Text("\tthe\\second"));
+
+        assert_eq!(JSONValue::Object(map), res.unwrap());
     }
 
     fn file_to_str(path: &'static str) -> String {
