@@ -606,7 +606,7 @@ mod tests {
     fn canada_json() {
         let txt = file_to_str("tests/canada.json");
 
-        if let Err(e) = JSONValue::parse(&txt) {
+        if let Err(e) = JSONValue::from_str(&txt) {
             panic!("Cibola failed with: {}", e);
         }
     }
@@ -615,7 +615,7 @@ mod tests {
     fn citm_catalog_json() {
         let txt = file_to_str("tests/citm_catalog.json");
 
-        if let Err(e) = JSONValue::parse(&txt) {
+        if let Err(e) = JSONValue::from_str(&txt) {
             panic!("Cibola failed with: {}", e);
         }
     }

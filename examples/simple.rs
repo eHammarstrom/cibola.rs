@@ -19,7 +19,7 @@ fn main() {
 
     let _ = f.read_to_string(&mut txt).unwrap();
 
-    if let Err(e) = JSONValue::parse(&txt) {
-        println!("Simple failed with: {}", e);
-    }
+    let json_blob = JSONValue::from_str(&txt).expect("malformed json");
+
+    println!("{:#?}", json_blob);
 }
