@@ -1,4 +1,5 @@
 extern crate lexical_core;
 
-pub mod json;
-mod parse;
+mod json;
+pub mod parse;
+

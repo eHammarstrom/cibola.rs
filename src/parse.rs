@@ -68,8 +68,8 @@ impl fmt::Display for Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-impl<'a, 'b: 'a> ParseContext<'a> {
-    pub fn new(text: &'b str) -> ParseContext {
+impl<'a> ParseContext<'a> {
+    pub fn new(text: &'a str) -> ParseContext {
         ParseContext {
             bytes: text.as_bytes(),
             text,
@@ -78,7 +78,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<JSONValue<'b>> {
+    pub fn parse(&mut self) -> Result<JSONValue<'a>> {
         // valid json starts with object or array
         match self.value() {
             o @ Ok(JSONValue::Object(_)) => o,
@@ -169,7 +169,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes all bytes up intil an expected end byte
-    fn eat_until(&mut self, token: u8) -> Result<&'b str> {
+    fn eat_until(&mut self, token: u8) -> Result<&'a str> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
@@ -206,7 +206,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    fn eat_buffered_until(&mut self, initial_str: &'b str, token: u8) -> Result<&'b str> {
+    fn eat_buffered_until(&mut self, initial_str: &'a str, token: u8) -> Result<&'a str> {
         let mut buffer = Vec::from(initial_str.as_bytes());
 
         loop {
@@ -220,7 +220,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
                 self.accept();
                 let following_b = self.current_byte()?;
 
-                // escape '"' '\' '/' 'b' 'f' 'n' 'r' 't'
+                // escape '"' '\' '/' ' 'f' 'n' 'r' 't'
                 // TODO: unicode: 'u' hex hex hex hex
                 match following_b {
                     b'"' => buffer.push(b'\"'),
@@ -242,7 +242,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             }
         }
 
-        let buffered_str: &'b str = unsafe {
+        let buffered_str: & str = unsafe {
             str::from_utf8_unchecked(slice::from_raw_parts(buffer.as_ptr(), buffer.len()))
         };
 
@@ -252,7 +252,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an object
-    fn object(&mut self) -> Result<JSONValue<'b>> {
+    fn object(&mut self) -> Result<JSONValue<'a>> {
         self.skip_control_chars();
         self.eat(b'{')?;
 
@@ -265,9 +265,9 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes object fields
-    fn object_fields(&mut self) -> Result<HashMap<&'b str, JSONValue<'b>>> {
+    fn object_fields(&mut self) -> Result<HashMap<&'a str, JSONValue<'a>>> {
         let b = self.current_byte()?;
-        let mut hashmap = HashMap::<&str, JSONValue<'b>>::new();
+        let mut hashmap = HashMap::<&str, JSONValue<>>::new();
 
         if b == b'}' {
             // empty object
@@ -291,7 +291,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an identifier and a value
-    fn object_field(&mut self) -> Result<(&'b str, JSONValue<'b>)> {
+    fn object_field(&mut self) -> Result<(&'a str, JSONValue<'a>)> {
         // 1. parse identifier
         // 2. parse value
 
@@ -307,7 +307,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an array
-    fn array(&mut self) -> Result<JSONValue<'b>> {
+    fn array(&mut self) -> Result<JSONValue<'a>> {
         self.skip_control_chars();
         self.eat(b'[')?;
 
@@ -321,9 +321,9 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes comma separated values
-    fn array_values(&mut self) -> Result<Vec<JSONValue<'b>>> {
+    fn array_values(&mut self) -> Result<Vec<JSONValue<'a>>> {
         let b = self.current_byte()?;
-        let mut vals = Vec::<JSONValue<'b>>::new();
+        let mut vals = Vec::<JSONValue<>>::new();
 
         if b == b']' {
             // empty array
@@ -347,7 +347,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an enquoted string
-    fn string(&mut self) -> Result<&'b str> {
+    fn string(&mut self) -> Result<&'a str> {
         self.eat(b'"')?;
         let s = self.eat_until(b'"')?;
         self.eat(b'"')?;
@@ -356,13 +356,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes a Text value
-    fn text(&mut self) -> Result<JSONValue<'b>> {
+    fn text(&mut self) -> Result<JSONValue<'a>> {
         let s = self.string()?;
         Ok(JSONValue::Text(s))
     }
 
     /// Consumes a f64 Number value
-    fn number(&mut self) -> Result<JSONValue<'b>> {
+    fn number(&mut self) -> Result<JSONValue<'a>> {
         let idx_start = self.index;
 
         // eat through valid bytes
@@ -384,7 +384,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes a valid value
-    fn value(&mut self) -> Result<JSONValue<'b>> {
+    fn value(&mut self) -> Result<JSONValue<'a>> {
         self.skip_control_chars();
 
         let next = self.current_byte()?;
@@ -422,6 +422,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 mod tests {
     use crate::json::JSONValue;
     use crate::parse;
+    use crate::parse::ParseContext;
     use std::collections::HashMap;
     use std::fs::File;
     use std::io::Read;
@@ -606,7 +607,9 @@ mod tests {
     fn canada_json() {
         let txt = file_to_str("tests/canada.json");
 
-        if let Err(e) = JSONValue::parse(&txt) {
+        let mut ctx = ParseContext::new(&txt);
+
+        if let Err(e) = ctx.parse() {
             panic!("Cibola failed with: {}", e);
         }
     }
@@ -615,7 +618,9 @@ mod tests {
     fn citm_catalog_json() {
         let txt = file_to_str("tests/citm_catalog.json");
 
-        if let Err(e) = JSONValue::parse(&txt) {
+        let mut ctx = ParseContext::new(&txt);
+
+        if let Err(e) = ctx.parse() {
             panic!("Cibola failed with: {}", e);
         }
     }
