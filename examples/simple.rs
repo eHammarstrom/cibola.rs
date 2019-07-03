@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process;
 
-use cibola::json::JSONValue;
+use cibola::json;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -19,7 +19,7 @@ fn main() {
 
     let _ = f.read_to_string(&mut txt).unwrap();
 
-    let json_blob = JSONValue::from_str(&txt).expect("malformed json");
+    let json_blob = json::from_str(&txt).expect("malformed json");
 
     println!("{:#?}", json_blob);
 }

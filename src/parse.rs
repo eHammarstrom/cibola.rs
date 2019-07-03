@@ -5,6 +5,8 @@ use std::fmt;
 use std::slice;
 use std::str;
 
+use crate::json;
+
 use lexical_core;
 
 //
@@ -78,7 +80,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<JSONValue<'b>> {
+    pub fn parse(&mut self) -> Result<JSONValue> {
         // valid json starts with object or array
         match self.value() {
             o @ Ok(JSONValue::Object(_)) => o,
@@ -169,7 +171,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes all bytes up intil an expected end byte
-    fn eat_until(&mut self, token: u8) -> Result<&'b str> {
+    fn eat_until(&mut self, token: u8) -> Result<String> {
         let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
@@ -202,11 +204,11 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             Ok(str::from_utf8_unchecked(slice::from_raw_parts(
                 ptr_start,
                 idx_end - idx_start,
-            )))
+            )).to_owned())
         }
     }
 
-    fn eat_buffered_until(&mut self, initial_str: &'b str, token: u8) -> Result<&'b str> {
+    fn eat_buffered_until(&mut self, initial_str: &'b str, token: u8) -> Result<String> {
         let mut buffer = Vec::from(initial_str.as_bytes());
 
         loop {
@@ -248,11 +250,11 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
         self.buffers.push(buffer);
 
-        Ok(buffered_str)
+        Ok(buffered_str.to_owned())
     }
 
     /// Consumes an object
-    fn object(&mut self) -> Result<JSONValue<'b>> {
+    fn object(&mut self) -> Result<JSONValue> {
         self.skip_control_chars();
         self.eat(b'{')?;
 
@@ -261,13 +263,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
         self.skip_control_chars();
         self.eat(b'}')?;
-        Ok(JSONValue::Object(fields))
+        Ok(json::object(fields))
     }
 
     /// Consumes object fields
-    fn object_fields(&mut self) -> Result<HashMap<&'b str, JSONValue<'b>>> {
+    fn object_fields(&mut self) -> Result<HashMap<String, JSONValue>> {
         let b = self.current_byte()?;
-        let mut hashmap = HashMap::<&str, JSONValue<'b>>::new();
+        let mut hashmap = HashMap::<String, JSONValue>::new();
 
         if b == b'}' {
             // empty object
@@ -291,7 +293,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an identifier and a value
-    fn object_field(&mut self) -> Result<(&'b str, JSONValue<'b>)> {
+    fn object_field(&mut self) -> Result<(String, JSONValue)> {
         // 1. parse identifier
         // 2. parse value
 
@@ -307,7 +309,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an array
-    fn array(&mut self) -> Result<JSONValue<'b>> {
+    fn array(&mut self) -> Result<JSONValue> {
         self.skip_control_chars();
         self.eat(b'[')?;
 
@@ -317,13 +319,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         self.skip_control_chars();
         self.eat(b']')?;
 
-        Ok(JSONValue::Array(values))
+        Ok(json::array(values))
     }
 
     /// Consumes comma separated values
-    fn array_values(&mut self) -> Result<Vec<JSONValue<'b>>> {
+    fn array_values(&mut self) -> Result<Vec<JSONValue>> {
         let b = self.current_byte()?;
-        let mut vals = Vec::<JSONValue<'b>>::new();
+        let mut vals = Vec::<JSONValue>::new();
 
         if b == b']' {
             // empty array
@@ -347,7 +349,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes an enquoted string
-    fn string(&mut self) -> Result<&'b str> {
+    fn string(&mut self) -> Result<String> {
         self.eat(b'"')?;
         let s = self.eat_until(b'"')?;
         self.eat(b'"')?;
@@ -356,13 +358,13 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     }
 
     /// Consumes a Text value
-    fn text(&mut self) -> Result<JSONValue<'b>> {
+    fn text(&mut self) -> Result<JSONValue> {
         let s = self.string()?;
-        Ok(JSONValue::Text(s))
+        Ok(json::text(s))
     }
 
     /// Consumes a f64 Number value
-    fn number(&mut self) -> Result<JSONValue<'b>> {
+    fn number(&mut self) -> Result<JSONValue> {
         let idx_start = self.index;
 
         // eat through valid bytes
@@ -377,14 +379,14 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let res = lexical_core::try_atof64_slice(&self.bytes[idx_start..self.index]);
 
         if res.error.code == lexical_core::ErrorCode::Success {
-            Ok(JSONValue::Number(res.value))
+            Ok(json::number(res.value))
         } else {
             self.fail()
         }
     }
 
     /// Consumes a valid value
-    fn value(&mut self) -> Result<JSONValue<'b>> {
+    fn value(&mut self) -> Result<JSONValue> {
         self.skip_control_chars();
 
         let next = self.current_byte()?;
@@ -394,15 +396,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             b'0'...b'9' | b'-' => self.number(),
             b't' => {
                 self.eat_str("true")?;
-                Ok(JSONValue::Bool(true))
+                Ok(json::bool(true))
             }
             b'f' => {
                 self.eat_str("false")?;
-                Ok(JSONValue::Bool(false))
+                Ok(json::bool(false))
             }
             b'n' => {
                 self.eat_str("null")?;
-                Ok(JSONValue::Null)
+                Ok(json::null())
             }
             b'"' => self.text(),
             b'[' => self.array(),
@@ -421,6 +423,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 #[cfg(test)]
 mod tests {
     use crate::json::JSONValue;
+    use crate::json;
     use crate::parse;
     use std::collections::HashMap;
     use std::fs::File;
@@ -428,37 +431,37 @@ mod tests {
 
     #[test]
     fn parse_text_and_boolean() {
-        let mut obj = HashMap::<&str, JSONValue>::new();
-        obj.insert("myBool", JSONValue::Bool(true));
-        obj.insert("myString", JSONValue::Text("SomeString"));
+        let mut obj = HashMap::<String, JSONValue>::new();
+        obj.insert("myBool".to_string(), json::bool(true));
+        obj.insert("myString".to_string(), json::text("SomeString"));
 
         let txt = r#"{ "myString": "SomeString", "myBool":  true }"#;
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), JSONValue::Object(obj));
+        assert_eq!(res.unwrap(), json::object(obj));
     }
 
     #[test]
     fn parse_text_and_boolean_trailing_comma() {
-        let mut obj = HashMap::<&str, JSONValue>::new();
-        obj.insert("myBool", JSONValue::Bool(true));
-        obj.insert("myString", JSONValue::Text("SomeString"));
+        let mut obj = HashMap::<String, JSONValue>::new();
+        obj.insert("myBool".to_string(), json::bool(true));
+        obj.insert("myString".to_string(), json::text("SomeString"));
 
         let txt = r#"{ "myString": "SomeString", "myBool":  true, }"#;
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), JSONValue::Object(obj));
+        assert_eq!(res.unwrap(), json::object(obj));
     }
 
     #[test]
     fn parse_nested_object() {
-        let mut obj = HashMap::<&str, JSONValue>::new();
-        obj.insert("myBool", JSONValue::Bool(true));
-        obj.insert("myString", JSONValue::Text("SomeString"));
+        let mut obj = HashMap::<String, JSONValue>::new();
+        obj.insert("myBool".to_string(), json::bool(true));
+        obj.insert("myString".to_string(), json::text("SomeString"));
         let nest = obj.clone();
-        obj.insert("myObject", JSONValue::Object(nest));
+        obj.insert("myObject".to_string(), json::object(nest));
 
         let txt = r#"
 
@@ -473,7 +476,7 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), JSONValue::Object(obj));
+        assert_eq!(res.unwrap(), json::object(obj));
     }
 
     #[test]
@@ -493,25 +496,25 @@ mod tests {
         let r3 = c3.number();
         let r4 = c4.number();
 
-        assert_eq!(JSONValue::Number(3.14), r1.unwrap());
-        assert_eq!(JSONValue::Number(-3.14), r2.unwrap());
-        assert_eq!(JSONValue::Number(23.2e-10), r3.unwrap());
-        assert_eq!(JSONValue::Number(23.2E10), r4.unwrap());
+        assert_eq!(json::number(3.14), r1.unwrap());
+        assert_eq!(json::number(-3.14), r2.unwrap());
+        assert_eq!(json::number(23.2e-10), r3.unwrap());
+        assert_eq!(json::number(23.2E10), r4.unwrap());
     }
 
     #[test]
     fn parse_object() {
-        let mut obj = HashMap::<&str, JSONValue>::new();
-        obj.insert("myBool", JSONValue::Bool(true));
-        obj.insert("myString", JSONValue::Text("SomeString"));
+        let mut obj = HashMap::<String, JSONValue>::new();
+        obj.insert("myBool".to_string(), json::bool(true));
+        obj.insert("myString".to_string(), json::text("SomeString"));
 
         let mut nest = obj.clone();
 
-        nest.insert("myNumber", JSONValue::Number(33.14));
-        nest.insert("myNull", JSONValue::Null);
-        nest.insert("myNumber2", JSONValue::Number(-33.14));
+        nest.insert("myNumber".to_string(), json::number(33.14));
+        nest.insert("myNull".to_string(), json::null());
+        nest.insert("myNumber2".to_string(), json::number(-33.14));
 
-        obj.insert("myObject", JSONValue::Object(nest));
+        obj.insert("myObject".to_string(), json::object(nest));
 
         let txt = r#"
 
@@ -529,19 +532,19 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), JSONValue::Object(obj));
+        assert_eq!(res.unwrap(), json::object(obj));
     }
 
     #[test]
     fn parse_array() {
-        let mut map = HashMap::<&str, JSONValue>::new();
-        map.insert("myBool", JSONValue::Bool(true));
-        map.insert("myString", JSONValue::Text("SomeString"));
+        let mut map = HashMap::<String, JSONValue>::new();
+        map.insert("myBool".to_string(), json::bool(true));
+        map.insert("myString".to_string(), json::text("SomeString"));
 
         let arr = vec![
-            JSONValue::Text("SomeString"),
-            JSONValue::Object(map),
-            JSONValue::Number(33.14),
+            json::text("SomeString"),
+            json::object(map),
+            json::number(33.14),
         ];
 
         let txt = r#"
@@ -556,7 +559,7 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.array();
 
-        assert_eq!(res.unwrap(), JSONValue::Array(arr));
+        assert_eq!(res.unwrap(), json::array(arr));
     }
 
     #[test]
@@ -567,7 +570,7 @@ mod tests {
 
         let r1 = c1.text();
 
-        assert_eq!(JSONValue::Text("An\nEscaped\tString"), r1.unwrap());
+        assert_eq!(json::text("An\nEscaped\tString"), r1.unwrap());
     }
 
     #[test]
@@ -583,13 +586,13 @@ mod tests {
 
         let res = ctx.object();
 
-        let mut map = HashMap::new();
+        let mut map = HashMap::<String, JSONValue>::new();
 
-        map.insert("myFirs\tt", JSONValue::Text("Str\\ng"));
-        map.insert("followed", JSONValue::Bool(true));
-        map.insert("by\\", JSONValue::Text("\tthe\\second"));
+        map.insert("myFirs\tt".to_string(), json::text("Str\\ng"));
+        map.insert("followed".to_string(), json::bool(true));
+        map.insert("by\\".to_string(), json::text("\tthe\\second"));
 
-        assert_eq!(JSONValue::Object(map), res.unwrap());
+        assert_eq!(json::object(map), res.unwrap());
     }
 
     fn file_to_str(path: &'static str) -> String {
@@ -606,7 +609,7 @@ mod tests {
     fn canada_json() {
         let txt = file_to_str("tests/canada.json");
 
-        if let Err(e) = JSONValue::from_str(&txt) {
+        if let Err(e) = json::from_str(&txt) {
             panic!("Cibola failed with: {}", e);
         }
     }
@@ -615,7 +618,7 @@ mod tests {
     fn citm_catalog_json() {
         let txt = file_to_str("tests/citm_catalog.json");
 
-        if let Err(e) = JSONValue::from_str(&txt) {
+        if let Err(e) = json::from_str(&txt) {
             panic!("Cibola failed with: {}", e);
         }
     }
