@@ -9,7 +9,7 @@ use criterion::Throughput;
 use std::fs::File;
 use std::io::prelude::*;
 
-use cibola::json::JSONValue;
+use cibola;
 
 use json;
 
@@ -28,7 +28,7 @@ fn file_to_str(path: &'static str) -> String {
 fn parse_json(path: &'static str) {
     let txt = file_to_str(path);
 
-    if let Err(e) = JSONValue::from_str(&txt) {
+    if let Err(e) = cibola::json::from_str(&txt) {
         panic!("Cibola failed with: {}", e);
     }
 }
