@@ -1,6 +1,14 @@
 use crate::parse;
+use std::convert::From;
 
 use std::collections::HashMap;
+
+/// Parse JSON string into recursive JSONValue struct
+pub fn from_str(text: &str) -> Result<JSONValue, parse::Error> {
+    let mut parse_context = parse::ParseContext::new(text);
+
+    parse_context.parse()
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum JSONValue {
@@ -12,47 +20,53 @@ pub enum JSONValue {
     Null,
 }
 
-pub fn from_str(text: &str) -> Result<JSONValue, parse::Error> {
-    let mut parse_context = parse::ParseContext::new(text);
-
-    parse_context.parse()
+impl From<HashMap<String, JSONValue>> for JSONValue {
+    fn from(item: HashMap<String, JSONValue>) -> Self {
+        JSONValue::Object(item)
+    }
 }
 
-pub fn object(x: HashMap<String, JSONValue>) -> JSONValue
-{
-    JSONValue::Object(x)
+impl From<HashMap<&str, JSONValue>> for JSONValue {
+    fn from(item: HashMap<&str, JSONValue>) -> Self {
+        let map = item.into_iter().map(|(k, v)| (k.to_owned(), v)).collect();
+
+        JSONValue::Object(map)
+    }
 }
 
-pub fn array<T>(x: T) -> JSONValue
-where
-T: Into<Vec<JSONValue>>,
-{
-    JSONValue::Array(x.into())
+impl From<Vec<JSONValue>> for JSONValue {
+    fn from(item: Vec<JSONValue>) -> Self {
+        JSONValue::Array(item)
+    }
 }
 
-pub fn bool<T>(x: T) -> JSONValue
-where
-T: Into<bool>,
-{
-    JSONValue::Bool(x.into())
+impl From<bool> for JSONValue {
+    fn from(item: bool) -> Self {
+        JSONValue::Bool(item)
+    }
 }
 
-pub fn text<T>(x: T) -> JSONValue
-where
-T: Into<String>,
-{
-    JSONValue::Text(x.into())
+impl From<f64> for JSONValue {
+    fn from(item: f64) -> Self {
+        JSONValue::Number(item)
+    }
 }
 
-pub fn number<T>(x: T) -> JSONValue
-where
-T: Into<f64>,
-{
-    JSONValue::Number(x.into())
+impl From<f32> for JSONValue {
+    fn from(item: f32) -> Self {
+        JSONValue::Number(item.into())
+    }
 }
 
-pub fn null() -> JSONValue
-{
-    JSONValue::Null
+impl From<String> for JSONValue {
+    fn from(item: String) -> Self {
+        JSONValue::Text(item)
+    }
+}
+
+impl From<&str> for JSONValue {
+    fn from(item: &str) -> Self {
+        JSONValue::Text(item.to_owned())
+    }
 }
 

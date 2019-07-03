@@ -263,7 +263,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
         self.skip_control_chars();
         self.eat(b'}')?;
-        Ok(json::object(fields))
+        Ok(JSONValue::Object(fields))
     }
 
     /// Consumes object fields
@@ -319,7 +319,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         self.skip_control_chars();
         self.eat(b']')?;
 
-        Ok(json::array(values))
+        Ok(JSONValue::Array(values))
     }
 
     /// Consumes comma separated values
@@ -360,7 +360,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
     /// Consumes a Text value
     fn text(&mut self) -> Result<JSONValue> {
         let s = self.string()?;
-        Ok(json::text(s))
+        Ok(JSONValue::Text(s))
     }
 
     /// Consumes a f64 Number value
@@ -379,7 +379,7 @@ impl<'a, 'b: 'a> ParseContext<'a> {
         let res = lexical_core::try_atof64_slice(&self.bytes[idx_start..self.index]);
 
         if res.error.code == lexical_core::ErrorCode::Success {
-            Ok(json::number(res.value))
+            Ok(JSONValue::Number(res.value))
         } else {
             self.fail()
         }
@@ -396,15 +396,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             b'0'...b'9' | b'-' => self.number(),
             b't' => {
                 self.eat_str("true")?;
-                Ok(json::bool(true))
+                Ok(JSONValue::Bool(true))
             }
             b'f' => {
                 self.eat_str("false")?;
-                Ok(json::bool(false))
+                Ok(JSONValue::Bool(false))
             }
             b'n' => {
                 self.eat_str("null")?;
-                Ok(json::null())
+                Ok(JSONValue::Null)
             }
             b'"' => self.text(),
             b'[' => self.array(),
@@ -431,37 +431,37 @@ mod tests {
 
     #[test]
     fn parse_text_and_boolean() {
-        let mut obj = HashMap::<String, JSONValue>::new();
-        obj.insert("myBool".to_string(), json::bool(true));
-        obj.insert("myString".to_string(), json::text("SomeString"));
+        let mut obj = HashMap::<&str, JSONValue>::new();
+        obj.insert("myBool", true.into());
+        obj.insert("myString", "SomeString".into());
 
         let txt = r#"{ "myString": "SomeString", "myBool":  true }"#;
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), json::object(obj));
+        assert_eq!(res.unwrap(), obj.into());
     }
 
     #[test]
     fn parse_text_and_boolean_trailing_comma() {
-        let mut obj = HashMap::<String, JSONValue>::new();
-        obj.insert("myBool".to_string(), json::bool(true));
-        obj.insert("myString".to_string(), json::text("SomeString"));
+        let mut obj = HashMap::<&str, JSONValue>::new();
+        obj.insert("myBool", true.into());
+        obj.insert("myString", "SomeString".into());
 
         let txt = r#"{ "myString": "SomeString", "myBool":  true, }"#;
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), json::object(obj));
+        assert_eq!(res.unwrap(), obj.into());
     }
 
     #[test]
     fn parse_nested_object() {
-        let mut obj = HashMap::<String, JSONValue>::new();
-        obj.insert("myBool".to_string(), json::bool(true));
-        obj.insert("myString".to_string(), json::text("SomeString"));
+        let mut obj = HashMap::<&str, JSONValue>::new();
+        obj.insert("myBool", true.into());
+        obj.insert("myString", "SomeString".into());
         let nest = obj.clone();
-        obj.insert("myObject".to_string(), json::object(nest));
+        obj.insert("myObject", nest.into());
 
         let txt = r#"
 
@@ -476,7 +476,7 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), json::object(obj));
+        assert_eq!(res.unwrap(), obj.into());
     }
 
     #[test]
@@ -496,25 +496,26 @@ mod tests {
         let r3 = c3.number();
         let r4 = c4.number();
 
-        assert_eq!(json::number(3.14), r1.unwrap());
-        assert_eq!(json::number(-3.14), r2.unwrap());
-        assert_eq!(json::number(23.2e-10), r3.unwrap());
-        assert_eq!(json::number(23.2E10), r4.unwrap());
+        assert_eq!(JSONValue::from(3.14), r1.unwrap());
+        assert_eq!(JSONValue::from(-3.14), r2.unwrap());
+        assert_eq!(JSONValue::from(23.2e-10), r3.unwrap());
+        assert_eq!(JSONValue::from(23.2E10), r4.unwrap());
     }
 
     #[test]
     fn parse_object() {
-        let mut obj = HashMap::<String, JSONValue>::new();
-        obj.insert("myBool".to_string(), json::bool(true));
-        obj.insert("myString".to_string(), json::text("SomeString"));
+        let mut obj = HashMap::<&str, JSONValue>::new();
 
-        let mut nest = obj.clone();
+        obj.insert("myBool", true.into());
+        obj.insert("myString", "SomeString".into());
 
-        nest.insert("myNumber".to_string(), json::number(33.14));
-        nest.insert("myNull".to_string(), json::null());
-        nest.insert("myNumber2".to_string(), json::number(-33.14));
+        let mut nest: HashMap::<&str, JSONValue> = obj.clone();
 
-        obj.insert("myObject".to_string(), json::object(nest));
+        nest.insert("myNumber", 33.14.into());
+        nest.insert("myNull", JSONValue::Null);
+        nest.insert("myNumber2", (-33.14).into());
+
+        obj.insert("myObject", nest.into());
 
         let txt = r#"
 
@@ -532,19 +533,19 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.object();
 
-        assert_eq!(res.unwrap(), json::object(obj));
+        assert_eq!(res.unwrap(), obj.into());
     }
 
     #[test]
     fn parse_array() {
-        let mut map = HashMap::<String, JSONValue>::new();
-        map.insert("myBool".to_string(), json::bool(true));
-        map.insert("myString".to_string(), json::text("SomeString"));
+        let mut map = HashMap::<&str, JSONValue>::new();
+        map.insert("myBool", true.into());
+        map.insert("myString", "SomeString".into());
 
         let arr = vec![
-            json::text("SomeString"),
-            json::object(map),
-            json::number(33.14),
+            "SomeString".into(),
+            map.into(),
+            33.14.into(),
         ];
 
         let txt = r#"
@@ -559,7 +560,7 @@ mod tests {
         let mut ctx = parse::ParseContext::new(txt);
         let res = ctx.array();
 
-        assert_eq!(res.unwrap(), json::array(arr));
+        assert_eq!(res.unwrap(), arr.into());
     }
 
     #[test]
@@ -570,7 +571,7 @@ mod tests {
 
         let r1 = c1.text();
 
-        assert_eq!(json::text("An\nEscaped\tString"), r1.unwrap());
+        assert_eq!(JSONValue::from("An\nEscaped\tString"), r1.unwrap());
     }
 
     #[test]
@@ -586,13 +587,13 @@ mod tests {
 
         let res = ctx.object();
 
-        let mut map = HashMap::<String, JSONValue>::new();
+        let mut map = HashMap::<&str, JSONValue>::new();
 
-        map.insert("myFirs\tt".to_string(), json::text("Str\\ng"));
-        map.insert("followed".to_string(), json::bool(true));
-        map.insert("by\\".to_string(), json::text("\tthe\\second"));
+        map.insert("myFirs\tt", "Str\\ng".into());
+        map.insert("followed", true.into());
+        map.insert("by\\", "\tthe\\second".into());
 
-        assert_eq!(json::object(map), res.unwrap());
+        assert_eq!(JSONValue::from(map), res.unwrap());
     }
 
     fn file_to_str(path: &'static str) -> String {
