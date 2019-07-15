@@ -2,51 +2,16 @@ use crate::json::JSONValue;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::slice;
 use std::str;
 
-use crate::json;
-
 use lexical_core;
-
-//
-// Borrowed from: https://github.com/maciejhirsz/json-rust/blob/master/src/parser.rs#L158
-//
-// Look up table that marks which characters are allowed in their raw
-// form in a string.
-/*
-const QU: bool = false; // double quote       0x22
-const BS: bool = false; // backslash          0x5C
-const CT: bool = false; // control character  0x00 ... 0x1F
-const __: bool = true;
-
-static ALLOWED: [bool; 256] = [
-    // 0   1   2   3   4   5   6   7   8   9   A   B   C   D   E   F
-    CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 0
-    CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, CT, // 1
-    __, __, QU, __, __, __, __, __, __, __, __, __, __, __, __, __, // 2
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 3
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 4
-    __, __, __, __, __, __, __, __, __, __, __, __, BS, __, __, __, // 5
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 6
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 7
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 8
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // 9
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // A
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // B
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // C
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // D
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // E
-    __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, __, // F
-];
-*/
 
 #[derive(Debug)]
 pub struct ParseContext<'a> {
     bytes: &'a [u8],
     text: &'a str,
     // storage used for escaped strings and unicode parsing
-    buffers: Vec<Vec<u8>>,
+    buffer: Vec<u8>,
     // index in byte sequence _bytes_
     index: usize,
 }
@@ -70,12 +35,12 @@ impl fmt::Display for Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-impl<'a, 'b: 'a> ParseContext<'a> {
-    pub fn new(text: &'b str) -> ParseContext {
+impl<'a> ParseContext<'a> {
+    pub fn new(text: &'a str) -> ParseContext {
         ParseContext {
             bytes: text.as_bytes(),
             text,
-            buffers: Vec::new(),
+            buffer: Vec::with_capacity(100),
             index: 0,
         }
     }
@@ -96,20 +61,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             println!("{}", s);
         }
 
-        let mut line = 0;
-        let mut col = 0;
+        // TODO: calculate (newline, char) distance to err byte
+        let line = 0;
+        let col = 0;
 
         Err(Error::UnexpectedCharacter {
             line,
             col,
             token: ' ',
         })
-    }
-
-    /// Returns pointer to current byte index
-    fn current_byte_as_ptr(&self) -> *const u8 {
-        let p = self.bytes.as_ptr();
-        unsafe { p.add(self.index) }
     }
 
     /// Returns byte at index or EOS
@@ -172,7 +132,6 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
     /// Consumes all bytes up intil an expected end byte
     fn eat_until(&mut self, token: u8) -> Result<String> {
-        let ptr_start = self.current_byte_as_ptr();
         let idx_start = self.index;
 
         loop {
@@ -185,12 +144,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             // hit escape char, start buffered parsing
             if b == b'\\' {
                 // bring the initial parsed bytes into the buffer
-                let initial_str = unsafe {
-                    str::from_utf8_unchecked(slice::from_raw_parts(
-                        ptr_start,
-                        self.index - idx_start,
-                    ))
-                };
+                let initial_str =
+                    unsafe { str::from_utf8_unchecked(&self.bytes[idx_start..self.index]) };
 
                 return self.eat_buffered_until(initial_str, token);
             } else {
@@ -198,18 +153,15 @@ impl<'a, 'b: 'a> ParseContext<'a> {
             }
         }
 
-        let idx_end = self.index;
+        let owned_str =
+            unsafe { str::from_utf8_unchecked(&self.bytes[idx_start..self.index]).to_owned() };
 
-        unsafe {
-            Ok(str::from_utf8_unchecked(slice::from_raw_parts(
-                ptr_start,
-                idx_end - idx_start,
-            )).to_owned())
-        }
+        Ok(owned_str)
     }
 
-    fn eat_buffered_until(&mut self, initial_str: &'b str, token: u8) -> Result<String> {
-        let mut buffer = Vec::from(initial_str.as_bytes());
+    fn eat_buffered_until(&mut self, initial_str: &'a str, token: u8) -> Result<String> {
+        self.buffer.clear();
+        self.buffer.extend_from_slice(initial_str.as_bytes());
 
         loop {
             let b = self.current_byte()?;
@@ -225,32 +177,28 @@ impl<'a, 'b: 'a> ParseContext<'a> {
                 // escape '"' '\' '/' 'b' 'f' 'n' 'r' 't'
                 // TODO: unicode: 'u' hex hex hex hex
                 match following_b {
-                    b'"' => buffer.push(b'\"'),
-                    b'\\' => buffer.push(b'\\'),
-                    b'/' => buffer.push(b'/'),
-                    b'b' => buffer.push(0x8),
-                    b'f' => buffer.push(0xC),
-                    b'n' => buffer.push(b'\n'),
-                    b'r' => buffer.push(b'\r'),
-                    b't' => buffer.push(b'\t'),
+                    b'"' => self.buffer.push(b'\"'),
+                    b'\\' => self.buffer.push(b'\\'),
+                    b'/' => self.buffer.push(b'/'),
+                    b'b' => self.buffer.push(0x8),
+                    b'f' => self.buffer.push(0xC),
+                    b'n' => self.buffer.push(b'\n'),
+                    b'r' => self.buffer.push(b'\r'),
+                    b't' => self.buffer.push(b'\t'),
                     // unexpected byte following escape
                     _ => return self.fail(),
                 }
 
                 self.accept();
             } else {
-                buffer.push(b);
+                self.buffer.push(b);
                 self.accept();
             }
         }
 
-        let buffered_str: &'b str = unsafe {
-            str::from_utf8_unchecked(slice::from_raw_parts(buffer.as_ptr(), buffer.len()))
-        };
+        let buffered_str: String = unsafe { str::from_utf8_unchecked(&self.buffer[..]).to_owned() };
 
-        self.buffers.push(buffer);
-
-        Ok(buffered_str.to_owned())
+        Ok(buffered_str)
     }
 
     /// Consumes an object
@@ -422,8 +370,8 @@ impl<'a, 'b: 'a> ParseContext<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::json::JSONValue;
     use crate::json;
+    use crate::json::JSONValue;
     use crate::parse;
     use std::collections::HashMap;
     use std::fs::File;
@@ -509,7 +457,7 @@ mod tests {
         obj.insert("myBool", true.into());
         obj.insert("myString", "SomeString".into());
 
-        let mut nest: HashMap::<&str, JSONValue> = obj.clone();
+        let mut nest: HashMap<&str, JSONValue> = obj.clone();
 
         nest.insert("myNumber", 33.14.into());
         nest.insert("myNull", JSONValue::Null);
@@ -542,11 +490,7 @@ mod tests {
         map.insert("myBool", true.into());
         map.insert("myString", "SomeString".into());
 
-        let arr = vec![
-            "SomeString".into(),
-            map.into(),
-            33.14.into(),
-        ];
+        let arr = vec!["SomeString".into(), map.into(), 33.14.into()];
 
         let txt = r#"
 
